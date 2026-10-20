@@ -1,0 +1,89 @@
+@page "/login"
+@attribute [ExcludeFromInteractiveRouting]
+@layout AuthLayout
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject AuthService Auth
+@inject SettingsService Settings
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in · Minecraft Server Manager</PageTitle>
+
+<h1 class="auth-title">Sign in</h1>
+<p class="muted">Sign in to manage your Minecraft server.</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger"><Icon Name="alert" /><div>@_error</div></div>
+}
+
+<EditForm Model="Input" method="post" OnValidSubmit="SignInAsync" FormName="login" class="form-stack">
+    <DataAnnotationsValidator />
+    <label class="field">
+        <span>Username</span>
+        <InputText class="input" @bind-Value="Input.Username" autocomplete="username" autofocus />
+        <ValidationMessage For="() => Input.Username" class="field-error" />
+    </label>
+    <label class="field">
+        <span>Password</span>
+        <InputText class="input" type="password" @bind-Value="Input.Password" autocomplete="current-password" />
+        <ValidationMessage For="() => Input.Password" class="field-error" />
+    </label>
+    <label class="check">
+        <InputCheckbox @bind-Value="Input.RememberMe" /> Keep me signed in
+    </label>
+    <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+</EditForm>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private LoginModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "ReturnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        if (!Settings.Current.IsSetupComplete) Navigation.NavigateTo("setup");
+    }
+
+    private async Task SignInAsync()
+    {
+        var client = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        if (Auth.IsLockedOut(client, out var remaining))
+        {
+            _error = $"Too many failed attempts. Try again in {Math.Ceiling(remaining.TotalMinutes)} minute(s).";
+            return;
+        }
+        if (!Auth.ValidateCredentials(Input.Username, Input.Password))
+        {
+            Auth.RegisterFailure(client);
+            _error = "Incorrect username or password.";
+            return;
+        }
+
+        Auth.ResetFailures(client);
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            Auth.CreatePrincipal(),
+            new AuthenticationProperties { IsPersistent = Input.RememberMe });
+        Navigation.NavigateTo(IsLocalUrl(ReturnUrl) ? ReturnUrl! : "/");
+    }
+
+    private static bool IsLocalUrl(string? url) =>
+        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\");
+
+    private sealed class LoginModel
+    {
+        [Required] public string Username { get; set; } = "";
+        [Required] public string Password { get; set; } = "";
+        public bool RememberMe { get; set; }
+    }
+}

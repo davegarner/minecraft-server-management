@@ -1,0 +1,345 @@
+@page "/updates"
+@implements IDisposable
+@inject UpdateService Updates
+@inject JavaService Java
+@inject SettingsService Settings
+@inject ServerProcessService Server
+@inject ServerPropertiesService Properties
+@inject ToastService Toasts
+
+<PageTitle>Updates · Minecraft Server Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Updates</h1>
+        <p class="muted">Install or update the official Minecraft Java Edition server. Downloads come directly from Mojang and are verified with SHA-1.</p>
+    </div>
+    <button class="btn btn-ghost" disabled="@_loading" @onclick="() => LoadAsync(true)"><Icon Name="refresh" /> Check for updates</button>
+</div>
+
+@if (!_eulaAccepted)
+{
+    <div class="alert alert-info">
+        <Icon Name="info" />
+        <div>
+            Before the server can run you must accept the
+            <a href="@ServerPropertiesService.EulaUrl" target="_blank" rel="noopener">Minecraft EULA</a>.
+        </div>
+        <button class="btn btn-primary btn-sm" @onclick="AcceptEula">I agree</button>
+    </div>
+}
+
+@if (Updates.Progress is { IsRecent: true } progress)
+{
+    <section class="card @(progress.Error is not null ? "card-danger" : progress.Succeeded ? "card-success" : "")">
+        <header class="card-header">
+            <h2>
+                @if (progress.IsRunning)
+                {
+                    <span class="spinner" aria-hidden="true"></span> @($"Installing Minecraft {progress.TargetVersion}")
+                }
+                else if (progress.Error is not null)
+                {
+                    <Icon Name="alert" /> @($"Installing Minecraft {progress.TargetVersion} failed")
+                }
+                else
+                {
+                    <Icon Name="check" /> @progress.Stage
+                }
+            </h2>
+        </header>
+        @if (progress.IsRunning)
+        {
+            <div class="progress-label">
+                <span>@progress.Stage</span>
+                @if (progress.TotalBytes > 0)
+                {
+                    <span class="muted small">@Fmt.Bytes(progress.BytesDownloaded) of @Fmt.Bytes(progress.TotalBytes)</span>
+                }
+            </div>
+            <div class="meter meter-lg"><div class="meter-fill" style="width: @Fmt.CssPercent(progress.Percent)"></div></div>
+        }
+        else if (progress.Error is not null)
+        {
+            <p>@progress.Error</p>
+        }
+    </section>
+}
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-label"><Icon Name="box" /> Installed</div>
+        <div class="stat-value">@(_installed?.DisplayName ?? "None")</div>
+        <div class="stat-sub">
+            @if (_installed is not null)
+            {
+                @($"{Fmt.Bytes(_installed.JarSize)} · installed {Fmt.Ago(_installed.JarModified)}")
+            }
+            else
+            {
+                @("No server.jar in the server directory")
+            }
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label"><Icon Name="star" /> Latest release</div>
+        <div class="stat-value">@(_manifest?.LatestRelease ?? "—")</div>
+        <div class="stat-sub">
+            @if (_latestDownload?.JavaMajorVersion is { } javaNeeded)
+            {
+                @($"Requires Java {javaNeeded}+")
+            }
+        </div>
+        @if (_manifest is not null && _installed?.VersionId != _manifest.LatestRelease)
+        {
+            <button class="btn btn-primary btn-sm" disabled="@(Updates.Progress.IsRunning)" @onclick="() => InstallAsync(_manifest.LatestRelease)">
+                <Icon Name="download" Size="16" /> @(_installed is null ? "Install" : "Update to") @_manifest.LatestRelease
+            </button>
+        }
+        else if (_manifest is not null)
+        {
+            <span class="badge badge-success">Up to date</span>
+        }
+    </div>
+    <div class="stat-card">
+        <div class="stat-label"><Icon Name="coffee" /> Java</div>
+        <div class="stat-value">@(_java is { } j ? $"Java {j.MajorVersion}" : "Not found")</div>
+        <div class="stat-sub truncate" title="@Settings.Current.JavaPath">@(_java?.Description ?? Settings.Current.JavaPath)</div>
+        @if (_java is null || (_latestDownload?.JavaMajorVersion is { } need && _java.MajorVersion < need))
+        {
+            <a class="btn btn-ghost btn-sm" href="@JavaService.DownloadUrl" target="_blank" rel="noopener"><Icon Name="external" Size="16" /> Get Java</a>
+        }
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger"><Icon Name="alert" /><div>Couldn't reach Mojang's version service: @_error</div></div>
+}
+
+<section class="card">
+    <header class="card-header">
+        <h2>All versions</h2>
+        <div class="segmented" role="tablist">
+            @foreach (var (key, label) in Filters)
+            {
+                <button role="tab" aria-selected="@(_filter == key)" class="@(_filter == key ? "active" : "")" @onclick="() => { _filter = key; _shown = PageSize; }">@label</button>
+            }
+        </div>
+    </header>
+    <div class="search-box">
+        <Icon Name="search" Size="16" />
+        <input class="input" placeholder="Search versions, e.g. 1.21" @bind="_search" @bind:event="oninput" aria-label="Search versions" />
+    </div>
+    @if (_loading && _manifest is null)
+    {
+        <p class="muted"><span class="spinner"></span> Loading versions…</p>
+    }
+    else if (_manifest is not null)
+    {
+        var versions = FilteredVersions().ToList();
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Version</th><th>Type</th><th>Released</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var version in versions.Take(_shown))
+                    {
+                        var isInstalled = version.Id == _installed?.VersionId;
+                        <tr @key="version.Id" class="@(isInstalled ? "row-highlight" : "")">
+                            <td>
+                                <strong>@version.Id</strong>
+                                @if (version.Id == _manifest.LatestRelease) { <span class="badge badge-success">Latest</span> }
+                                @if (isInstalled) { <span class="badge badge-info">Installed</span> }
+                            </td>
+                            <td><span class="badge @(version.Type == "release" ? "badge-neutral" : "badge-warning")">@TypeLabel(version.Type)</span></td>
+                            <td>@Fmt.Date(version.ReleaseTime)</td>
+                            <td class="row-actions">
+                                @if (!isInstalled)
+                                {
+                                    <button class="btn btn-ghost btn-sm" disabled="@(Updates.Progress.IsRunning)" @onclick="() => InstallAsync(version.Id)">
+                                        <Icon Name="download" Size="16" /> Install
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (versions.Count > _shown)
+        {
+            <div class="center"><button class="btn btn-ghost" @onclick="() => _shown += PageSize">Show more (@(versions.Count - _shown) remaining)</button></div>
+        }
+    }
+</section>
+
+@if (_archived.Count > 0)
+{
+    <section class="card">
+        <header class="card-header"><h2><Icon Name="undo" /> Previous server jars</h2></header>
+        <p class="muted small">The jar replaced by each update is kept here so you can roll back.</p>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Version</th><th>Replaced on</th><th class="num">Size</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var jar in _archived)
+                    {
+                        <tr @key="jar.FileName">
+                            <td><strong>@jar.Version</strong></td>
+                            <td>@Fmt.Date(jar.ArchivedAt)</td>
+                            <td class="num">@Fmt.Bytes(jar.Size)</td>
+                            <td class="row-actions">
+                                <button class="btn btn-ghost btn-sm" disabled="@(Updates.Progress.IsRunning)" @onclick="() => RollbackAsync(jar)"><Icon Name="undo" Size="16" /> Restore</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private const int PageSize = 25;
+
+    private static readonly (string Key, string Label)[] Filters =
+    [
+        ("release", "Releases"), ("snapshot", "Snapshots"), ("old", "Legacy"), ("all", "All"),
+    ];
+
+    private ConfirmDialog _confirm = default!;
+    private VersionManifest? _manifest;
+    private ServerDownload? _latestDownload;
+    private InstalledServer? _installed;
+    private JavaRuntimeInfo? _java;
+    private List<ArchivedJar> _archived = [];
+    private bool _eulaAccepted;
+    private bool _loading;
+    private string? _error;
+    private string _filter = "release";
+    private string _search = "";
+    private int _shown = PageSize;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Updates.Changed += OnChanged;
+        await LoadAsync(false);
+    }
+
+    private async Task LoadAsync(bool force)
+    {
+        _loading = true;
+        _error = null;
+        LoadLocal();
+        _java = await Java.ProbeAsync(Settings.Current.JavaPath);
+        try
+        {
+            _manifest = await Updates.GetManifestAsync(force);
+            _latestDownload = await Updates.GetServerDownloadAsync(_manifest.LatestRelease);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void LoadLocal()
+    {
+        _installed = Updates.GetInstalled();
+        _archived = Updates.ListArchivedJars().ToList();
+        _eulaAccepted = Properties.IsEulaAccepted();
+    }
+
+    private IEnumerable<MinecraftVersion> FilteredVersions()
+    {
+        var versions = _manifest?.Versions ?? [];
+        versions = _filter switch
+        {
+            "release" => versions.Where(v => v.Type == "release").ToList(),
+            "snapshot" => versions.Where(v => v.Type == "snapshot").ToList(),
+            "old" => versions.Where(v => v.Type.StartsWith("old_", StringComparison.Ordinal)).ToList(),
+            _ => versions,
+        };
+        return string.IsNullOrWhiteSpace(_search)
+            ? versions
+            : versions.Where(v => v.Id.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string TypeLabel(string type) => type switch
+    {
+        "release" => "Release",
+        "snapshot" => "Snapshot",
+        "old_beta" => "Beta",
+        "old_alpha" => "Alpha",
+        _ => type,
+    };
+
+    private async Task InstallAsync(string versionId)
+    {
+        var target = _manifest?.Find(versionId);
+        var installed = _manifest?.Find(_installed?.VersionId);
+        var isDowngrade = target is not null && installed is not null && target.ReleaseTime < installed.ReleaseTime;
+
+        var message = _installed is null
+            ? $"Download the Minecraft {versionId} server into {Settings.Current.ServerDirectory}."
+            : $"Replace {_installed.DisplayName} with Minecraft {versionId}. The current jar is kept so you can roll back.";
+        if (Server.IsRunning) message += " The server will be stopped and restarted.";
+        if (Settings.Current.BackupBeforeUpdate && _installed is not null) message += " The active world is backed up first.";
+        if (target?.Type != "release") message += " Snapshots and legacy versions are unstable and may damage worlds.";
+        if (isDowngrade) message += " WARNING: this is an older version. Worlds already opened in a newer version can fail to load or be corrupted.";
+
+        if (!await _confirm.ConfirmAsync($"Install Minecraft {versionId}?", message,
+                _installed is null ? "Install" : "Install update", danger: isDowngrade))
+            return;
+
+        try
+        {
+            await Updates.InstallAsync(versionId);
+            Toasts.Success($"Minecraft {versionId} installed.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        LoadLocal();
+    }
+
+    private async Task RollbackAsync(ArchivedJar jar)
+    {
+        if (!await _confirm.ConfirmAsync($"Restore {jar.Version}?",
+                "The current server jar is swapped for this one (and archived in turn). If your world was opened in a newer version it may not load in an older one; restore a matching world backup if needed.",
+                "Restore jar", danger: true))
+            return;
+        try
+        {
+            await Updates.RestoreArchivedJarAsync(jar.FileName);
+            Toasts.Success($"Server jar {jar.Version} restored.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        LoadLocal();
+    }
+
+    private void AcceptEula()
+    {
+        Properties.AcceptEula();
+        _eulaAccepted = true;
+        Toasts.Success("EULA accepted.");
+    }
+
+    private void OnChanged() => InvokeAsync(() =>
+    {
+        if (!Updates.Progress.IsRunning) LoadLocal();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Updates.Changed -= OnChanged;
+}

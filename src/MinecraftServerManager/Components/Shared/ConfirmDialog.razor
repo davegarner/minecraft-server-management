@@ -1,0 +1,77 @@
+@if (_request is not null)
+{
+    <div class="modal-backdrop" @onclick="Cancel"></div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div class="modal-header">
+            <h2 id="confirm-title">@_request.Title</h2>
+        </div>
+        <div class="modal-body">
+            <p>@_request.Message</p>
+            @if (_request.CheckboxLabel is not null)
+            {
+                <label class="check">
+                    <input type="checkbox" @bind="_checked" /> @_request.CheckboxLabel
+                </label>
+            }
+            @if (_request.RequireText is not null)
+            {
+                <label class="field">
+                    <span>Type <strong class="mono">@_request.RequireText</strong> to confirm</span>
+                    <input class="input" @bind="_typed" @bind:event="oninput" autocomplete="off" />
+                </label>
+            }
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+            <button class="btn @(_request.Danger ? "btn-danger" : "btn-primary")" disabled="@(!CanConfirm)" @onclick="Confirm">
+                @_request.ConfirmText
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    public sealed record Options(
+        string Title,
+        string Message,
+        string ConfirmText = "Confirm",
+        bool Danger = false,
+        string? CheckboxLabel = null,
+        bool CheckboxDefault = false,
+        string? RequireText = null);
+
+    public readonly record struct Result(bool Confirmed, bool Checked);
+
+    private Options? _request;
+    private TaskCompletionSource<Result>? _completion;
+    private bool _checked;
+    private string _typed = "";
+
+    private bool CanConfirm => _request?.RequireText is null || _typed.Trim() == _request.RequireText;
+
+    public Task<Result> ShowAsync(Options options)
+    {
+        _completion?.TrySetResult(default);
+        _request = options;
+        _checked = options.CheckboxDefault;
+        _typed = "";
+        _completion = new TaskCompletionSource<Result>(TaskCreationOptions.RunContinuationsAsynchronously);
+        StateHasChanged();
+        return _completion.Task;
+    }
+
+    public async Task<bool> ConfirmAsync(string title, string message, string confirmText = "Confirm", bool danger = false) =>
+        (await ShowAsync(new Options(title, message, confirmText, danger))).Confirmed;
+
+    private void Confirm() => Close(new Result(true, _checked));
+
+    private void Cancel() => Close(new Result(false, _checked));
+
+    private void Close(Result result)
+    {
+        var completion = _completion;
+        _request = null;
+        _completion = null;
+        completion?.TrySetResult(result);
+    }
+}

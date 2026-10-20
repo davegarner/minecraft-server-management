@@ -1,0 +1,155 @@
+@page "/console"
+@implements IDisposable
+@inject ServerProcessService Server
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+<PageTitle>Console · Minecraft Server Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Console</h1>
+        <p class="muted">Live server output. Commands are sent straight to the server console; no leading slash is needed.</p>
+    </div>
+    <ServerControls />
+</div>
+
+<section class="card console-card">
+    <div class="console-toolbar">
+        <div class="search-box">
+            <Icon Name="search" Size="16" />
+            <input class="input" placeholder="Filter output…" @bind="_filter" @bind:event="oninput" aria-label="Filter console output" />
+        </div>
+        <label class="check"><input type="checkbox" @bind="_autoScroll" /> Auto-scroll</label>
+        <button class="btn btn-ghost btn-sm" @onclick="ClearView">Clear view</button>
+    </div>
+
+    <div class="console" @ref="_consoleElement" role="log" aria-live="off">
+        @{ var lines = VisibleLines(); }
+        @if (lines.Count == 0)
+        {
+            <div class="console-empty">@(Server.IsRunning ? "Waiting for output…" : "No output yet. Start the server to see its console here.")</div>
+        }
+        @foreach (var line in lines)
+        {
+            <div class="cl @ConsoleStyles.ClassFor(line)" @key="line.Id">@line.Text</div>
+        }
+    </div>
+
+    @* Submission and history are handled by mcm.attachConsoleInput (app.js), not Blazor bindings. *@
+    <form class="console-input" @ref="_inputForm">
+        <span class="prompt" aria-hidden="true">&gt;</span>
+        <input class="input mono"
+               placeholder="@(Server.IsRunning ? "Type a command, e.g. say Hello or time set day" : "Start the server to send commands")"
+               disabled="@(!Server.IsRunning)" autocomplete="off" spellcheck="false" aria-label="Console command" />
+        <button class="btn btn-primary" type="submit" disabled="@(!Server.IsRunning)">
+            <Icon Name="send" Size="16" /> Send
+        </button>
+    </form>
+
+    <div class="chips">
+        <span class="muted small">Quick commands:</span>
+        @foreach (var (label, command) in QuickCommands)
+        {
+            <button class="chip" disabled="@(Server.State != ServerState.Running)" @onclick="() => SendQuickAsync(command)">@label</button>
+        }
+    </div>
+</section>
+
+@code {
+    private const int MaxRenderedLines = 1000;
+
+    private static readonly (string Label, string Command)[] QuickCommands =
+    [
+        ("List players", "list"),
+        ("Save world", "save-all"),
+        ("Set day", "time set day"),
+        ("Clear weather", "weather clear"),
+        ("Tick status", "tick query"),
+        ("Reload whitelist", "whitelist reload"),
+    ];
+
+    private ElementReference _consoleElement;
+    private ElementReference _inputForm;
+    private DotNetObjectReference<ConsolePage>? _selfReference;
+    private Timer? _renderTimer;
+    private volatile bool _dirty;
+    private bool _autoScroll = true;
+    private string _filter = "";
+    private long _clearedThroughId;
+    private long _lastScrolledId;
+
+    protected override void OnInitialized()
+    {
+        Server.LineReceived += OnLine;
+        Server.StateChanged += OnStateChanged;
+        // Batch re-renders so a burst of output (e.g. world generation) doesn't flood the connection.
+        _renderTimer = new Timer(_ =>
+        {
+            if (!_dirty) return;
+            _dirty = false;
+            InvokeAsync(StateHasChanged);
+        }, null, 200, 200);
+    }
+
+    private List<ConsoleLine> VisibleLines()
+    {
+        IEnumerable<ConsoleLine> lines = Server.GetConsoleSnapshot().Where(l => l.Id > _clearedThroughId);
+        if (!string.IsNullOrWhiteSpace(_filter))
+            lines = lines.Where(l => l.Text.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+        return lines.TakeLast(MaxRenderedLines).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                _selfReference = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("mcm.attachConsoleInput", _inputForm, _selfReference);
+            }
+
+            var lastId = Server.GetConsoleSnapshot().LastOrDefault()?.Id ?? 0;
+            if (!_autoScroll || (!firstRender && lastId == _lastScrolledId)) return;
+            _lastScrolledId = lastId;
+            await JS.InvokeVoidAsync("mcm.scrollToBottom", _consoleElement);
+        }
+        catch (JSDisconnectedException) { }
+        catch (TaskCanceledException) { }
+    }
+
+    [JSInvokable]
+    public async Task SendFromBrowser(string command)
+    {
+        try
+        {
+            await Server.SendCommandAsync(command);
+            _lastScrolledId = 0; // always jump to the response
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task SendQuickAsync(string command)
+    {
+        try { await Server.SendCommandAsync(command); }
+        catch (Exception ex) { Toasts.Error(ex.Message); }
+    }
+
+    private void ClearView() => _clearedThroughId = Server.GetConsoleSnapshot().LastOrDefault()?.Id ?? 0;
+
+    private void OnLine(ConsoleLine _) => _dirty = true;
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Server.LineReceived -= OnLine;
+        Server.StateChanged -= OnStateChanged;
+        _renderTimer?.Dispose();
+        _selfReference?.Dispose();
+    }
+}

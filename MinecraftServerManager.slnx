@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MinecraftServerManager/MinecraftServerManager.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MinecraftServerManager.Tests/MinecraftServerManager.Tests.csproj" />
+  </Folder>
+</Solution>

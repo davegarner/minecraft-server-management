@@ -1,0 +1,285 @@
+@page "/players"
+@implements IDisposable
+@inject PlayerService Players
+@inject ServerProcessService Server
+@inject ServerPropertiesService Properties
+@inject ToastService Toasts
+
+<PageTitle>Players · Minecraft Server Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Players</h1>
+        <p class="muted">
+            Manage operators, the whitelist and bans.
+            @(Server.IsRunning
+                ? "The server is running, so changes are applied with console commands."
+                : "The server is stopped, so changes are written directly to the server's JSON files.")
+        </p>
+    </div>
+</div>
+
+<section class="card">
+    <header class="card-header">
+        <h2><Icon Name="users" /> Online now <span class="count">@Server.OnlinePlayers.Count</span></h2>
+        <button class="btn btn-ghost btn-sm" disabled="@(Server.State != ServerState.Running)" @onclick="RefreshOnlineAsync"><Icon Name="refresh" Size="16" /> Refresh</button>
+    </header>
+    @if (Server.OnlinePlayers.Count == 0)
+    {
+        <p class="muted">@(Server.State == ServerState.Running ? "No players are online." : "The server isn't running.")</p>
+    }
+    else
+    {
+        <ul class="player-rows">
+            @foreach (var player in Server.OnlinePlayers)
+            {
+                <li @key="player">
+                    <span class="avatar">@player[0]</span>
+                    <strong>@player</strong>
+                    <span class="row-actions">
+                        @if (!_ops.Any(o => o.Name.Equals(player, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            <button class="btn btn-ghost btn-sm" @onclick="() => OpOnlinePlayerAsync(player)"><Icon Name="shield" Size="16" /> Op</button>
+                        }
+                        <button class="btn btn-ghost btn-sm" @onclick="() => KickAsync(player)"><Icon Name="user-x" Size="16" /> Kick</button>
+                        <button class="btn btn-ghost-danger btn-sm" @onclick="() => BanAsync(player)"><Icon Name="ban" Size="16" /> Ban</button>
+                    </span>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+<div class="tabs" role="tablist">
+    @foreach (var (key, label, count) in Tabs)
+    {
+        <button role="tab" aria-selected="@(_tab == key)" class="tab @(_tab == key ? "active" : "")" @onclick="() => _tab = key">
+            @label <span class="count">@count</span>
+        </button>
+    }
+</div>
+
+<section class="card tab-panel">
+    @switch (_tab)
+    {
+        case "ops":
+            <p class="muted small">Operators can run commands in game. Their permission level comes from <span class="mono">op-permission-level</span> (currently @(Properties.Get("op-permission-level") ?? "4")).</p>
+            <form class="form-inline" @onsubmit="AddOpAsync">
+                <input class="input" placeholder="Player name" @bind="_name" @bind:event="oninput" maxlength="16" aria-label="Player name" />
+                <button class="btn btn-primary" type="submit" disabled="@(!PlayerService.IsValidName(_name) || _busy)"><Icon Name="plus" /> Add operator</button>
+            </form>
+            @RenderPlayers(_ops, "No operators yet.", p => RunAsync(() => Players.RemoveOperatorAsync(p.Name), $"{p.Name} is no longer an operator."), "Remove")
+            break;
+
+        case "whitelist":
+            <div class="whitelist-toggles">
+                <label class="switch">
+                    <input type="checkbox" checked="@_whitelistEnabled" @onchange="e => SetWhitelistAsync(e.Value is true)" />
+                    <span class="slider"></span>
+                    <span class="switch-label">Whitelist @(_whitelistEnabled ? "enabled" : "disabled"): @(_whitelistEnabled ? "only listed players can join" : "anyone can join")</span>
+                </label>
+            </div>
+            <form class="form-inline" @onsubmit="AddWhitelistAsync">
+                <input class="input" placeholder="Player name" @bind="_name" @bind:event="oninput" maxlength="16" aria-label="Player name" />
+                <button class="btn btn-primary" type="submit" disabled="@(!PlayerService.IsValidName(_name) || _busy)"><Icon Name="plus" /> Add to whitelist</button>
+            </form>
+            @RenderPlayers(_whitelist, "The whitelist is empty.", p => RunAsync(() => Players.RemoveFromWhitelistAsync(p.Name), $"{p.Name} removed from the whitelist."), "Remove")
+            break;
+
+        case "bans":
+            <form class="form-inline" @onsubmit="AddBanAsync">
+                <input class="input" placeholder="Player name" @bind="_name" @bind:event="oninput" maxlength="16" aria-label="Player name" />
+                <input class="input grow" placeholder="Reason (optional)" @bind="_reason" @bind:event="oninput" aria-label="Ban reason" />
+                <button class="btn btn-danger" type="submit" disabled="@(!PlayerService.IsValidName(_name) || _busy)"><Icon Name="ban" /> Ban player</button>
+            </form>
+            @RenderPlayers(_bans, "No banned players.", p => RunAsync(() => Players.PardonAsync(p.Name), $"{p.Name} has been pardoned."), "Pardon")
+            break;
+
+        case "ips":
+            <form class="form-inline" @onsubmit="AddIpBanAsync">
+                <input class="input mono" placeholder="IP address" @bind="_ip" @bind:event="oninput" aria-label="IP address" />
+                <input class="input grow" placeholder="Reason (optional)" @bind="_reason" @bind:event="oninput" aria-label="Ban reason" />
+                <button class="btn btn-danger" type="submit" disabled="@(string.IsNullOrWhiteSpace(_ip) || _busy)"><Icon Name="ban" /> Ban IP</button>
+            </form>
+            @if (_ipBans.Count == 0)
+            {
+                <p class="muted">No banned IP addresses.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>IP address</th><th>Reason</th><th>Banned</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var ban in _ipBans)
+                            {
+                                <tr @key="ban.Ip">
+                                    <td class="mono">@ban.Ip</td>
+                                    <td>@ban.Reason</td>
+                                    <td class="small muted">@ban.Created</td>
+                                    <td class="row-actions"><button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="() => PardonIpAsync(ban.Ip)">Unban</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            break;
+    }
+</section>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    private List<PlayerEntry> _ops = [];
+    private List<PlayerEntry> _whitelist = [];
+    private List<PlayerEntry> _bans = [];
+    private List<IpBanEntry> _ipBans = [];
+    private bool _whitelistEnabled;
+    private string _tab = "ops";
+    private string _name = "";
+    private string _reason = "";
+    private string _ip = "";
+    private bool _busy;
+
+    private IEnumerable<(string Key, string Label, int Count)> Tabs =>
+    [
+        ("ops", "Operators", _ops.Count),
+        ("whitelist", "Whitelist", _whitelist.Count),
+        ("bans", "Banned players", _bans.Count),
+        ("ips", "Banned IPs", _ipBans.Count),
+    ];
+
+    protected override void OnInitialized()
+    {
+        Load();
+        Server.StateChanged += OnChanged;
+        Server.PlayersChanged += OnChanged;
+    }
+
+    private void Load()
+    {
+        _ops = Players.GetOperators().ToList();
+        _whitelist = Players.GetWhitelist().ToList();
+        _bans = Players.GetBannedPlayers().ToList();
+        _ipBans = Players.GetBannedIps().ToList();
+        _whitelistEnabled = Properties.Get("white-list") == "true";
+    }
+
+    private RenderFragment RenderPlayers(List<PlayerEntry> players, string emptyText, Func<PlayerEntry, Task> remove, string removeLabel) => __builder =>
+    {
+        if (players.Count == 0)
+        {
+            <p class="muted">@emptyText</p>
+            return;
+        }
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Player</th><th>UUID</th><th>Details</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var player in players)
+                    {
+                        <tr @key="player.Uuid ?? player.Name">
+                            <td><span class="avatar avatar-sm">@player.Name[0]</span> <strong>@player.Name</strong></td>
+                            <td class="mono small muted">@player.Uuid</td>
+                            <td class="small">
+                                @if (player.Level is { } level) { <span>Level @level</span> }
+                                @if (player.Reason is { Length: > 0 } reason) { <span>@reason</span> }
+                                @if (player.Created is { Length: > 0 } created) { <div class="muted">@created</div> }
+                            </td>
+                            <td class="row-actions"><button class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="() => remove(player)">@removeLabel</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    };
+
+    private Task AddOpAsync() => RunAsync(() => Players.AddOperatorAsync(_name.Trim()), $"{_name.Trim()} is now an operator.", clearInputs: true);
+
+    private Task AddWhitelistAsync() => RunAsync(() => Players.AddToWhitelistAsync(_name.Trim()), $"{_name.Trim()} added to the whitelist.", clearInputs: true);
+
+    private Task AddBanAsync() => RunAsync(() => Players.BanAsync(_name.Trim(), _reason), $"{_name.Trim()} has been banned.", clearInputs: true);
+
+    private Task AddIpBanAsync() => RunAsync(() => Players.BanIpAsync(_ip, _reason), $"{_ip.Trim()} has been banned.", clearInputs: true);
+
+    private Task PardonIpAsync(string ip) => RunAsync(() => Players.PardonIpAsync(ip), $"{ip} unbanned.");
+
+    private Task OpOnlinePlayerAsync(string player) => RunAsync(() => Players.AddOperatorAsync(player), $"{player} is now an operator.");
+
+    private async Task SetWhitelistAsync(bool enabled)
+    {
+        _whitelistEnabled = enabled;
+        Properties.Update(new Dictionary<string, string> { ["white-list"] = enabled ? "true" : "false" });
+        if (Server.State == ServerState.Running)
+        {
+            try { await Server.SendCommandAsync(enabled ? "whitelist on" : "whitelist off"); }
+            catch (Exception ex) { Toasts.Error(ex.Message); }
+        }
+        Toasts.Success(enabled ? "Whitelist enabled." : "Whitelist disabled.");
+    }
+
+    private async Task KickAsync(string player)
+    {
+        try
+        {
+            await Players.KickAsync(player, null);
+            Toasts.Success($"{player} was kicked.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task BanAsync(string player)
+    {
+        if (!await _confirm.ConfirmAsync($"Ban {player}?", $"{player} will be disconnected and prevented from joining until pardoned.", "Ban", danger: true))
+            return;
+        await RunAsync(() => Players.BanAsync(player, null), $"{player} has been banned.");
+    }
+
+    private async Task RefreshOnlineAsync()
+    {
+        try { await Server.SendCommandAsync("list"); }
+        catch (Exception ex) { Toasts.Error(ex.Message); }
+    }
+
+    private async Task RunAsync(Func<Task> action, string successMessage, bool clearInputs = false)
+    {
+        _busy = true;
+        try
+        {
+            await action();
+            Toasts.Success(successMessage);
+            if (clearInputs)
+            {
+                _name = "";
+                _reason = "";
+                _ip = "";
+            }
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+            Load();
+        }
+    }
+
+    private void OnChanged() => InvokeAsync(() =>
+    {
+        Load();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Server.StateChanged -= OnChanged;
+        Server.PlayersChanged -= OnChanged;
+    }
+}

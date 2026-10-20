@@ -1,0 +1,23 @@
+@implements IDisposable
+@inject ServerProcessService Server
+
+<span class="status-pill status-@Server.State.ToString().ToLowerInvariant()" role="status">
+    <span class="dot"></span>@Label(Server.State)
+</span>
+
+@code {
+    public static string Label(ServerState state) => state switch
+    {
+        ServerState.Starting => "Starting…",
+        ServerState.Running => "Running",
+        ServerState.Stopping => "Stopping…",
+        ServerState.Crashed => "Crashed",
+        _ => "Stopped",
+    };
+
+    protected override void OnInitialized() => Server.StateChanged += OnStateChanged;
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Server.StateChanged -= OnStateChanged;
+}

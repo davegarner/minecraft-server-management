@@ -1,0 +1,108 @@
+@page "/setup"
+@attribute [ExcludeFromInteractiveRouting]
+@layout AuthLayout
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject AuthService Auth
+@inject SettingsService Settings
+@inject NavigationManager Navigation
+
+<PageTitle>Setup · Minecraft Server Manager</PageTitle>
+
+<h1 class="auth-title">Welcome</h1>
+<p class="muted">Create the administrator account for this panel and choose where the Minecraft server files live.</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger"><Icon Name="alert" /><div>@_error</div></div>
+}
+
+<EditForm Model="Input" method="post" OnValidSubmit="CompleteSetupAsync" FormName="setup" class="form-stack">
+    <DataAnnotationsValidator />
+    <label class="field">
+        <span>Admin username</span>
+        <InputText class="input" @bind-Value="Input.Username" autocomplete="username" />
+        <ValidationMessage For="() => Input.Username" class="field-error" />
+    </label>
+    <label class="field">
+        <span>Password</span>
+        <InputText class="input" type="password" @bind-Value="Input.Password" autocomplete="new-password" />
+        <ValidationMessage For="() => Input.Password" class="field-error" />
+    </label>
+    <label class="field">
+        <span>Confirm password</span>
+        <InputText class="input" type="password" @bind-Value="Input.ConfirmPassword" autocomplete="new-password" />
+        <ValidationMessage For="() => Input.ConfirmPassword" class="field-error" />
+    </label>
+    <label class="field">
+        <span>Server directory</span>
+        <InputText class="input mono" @bind-Value="Input.ServerDirectory" />
+        <small class="muted">server.jar, server.properties and your worlds are stored here. It's created if it doesn't exist.</small>
+        <ValidationMessage For="() => Input.ServerDirectory" class="field-error" />
+    </label>
+    <button type="submit" class="btn btn-primary btn-block">Create account &amp; continue</button>
+</EditForm>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private SetupModel Input { get; set; } = default!;
+
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        if (Settings.Current.IsSetupComplete)
+        {
+            Navigation.NavigateTo("login");
+            return;
+        }
+        // Only prefill on the initial GET; a POST carries the submitted value.
+        if (HttpMethods.IsGet(HttpContext.Request.Method)) Input.ServerDirectory = Settings.Current.ServerDirectory;
+    }
+
+    private async Task CompleteSetupAsync()
+    {
+        var directory = Input.ServerDirectory.Trim();
+        if (!Path.IsPathFullyQualified(directory))
+        {
+            _error = "Enter a full path for the server directory, for example C:\\MinecraftServer.";
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            Auth.CompleteSetup(Input.Username, Input.Password);
+            Settings.Update(s => s.ServerDirectory = Path.GetFullPath(directory));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _error = ex.Message;
+            return;
+        }
+
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, Auth.CreatePrincipal());
+        Navigation.NavigateTo("/");
+    }
+
+    private sealed class SetupModel
+    {
+        [Required, StringLength(32, MinimumLength = 1)]
+        [RegularExpression(@"^[A-Za-z0-9_.\-]+$", ErrorMessage = "Use letters, numbers, dots, dashes and underscores.")]
+        public string Username { get; set; } = "admin";
+
+        [Required, MinLength(AuthService.MinPasswordLength, ErrorMessage = "Use at least 8 characters.")]
+        public string Password { get; set; } = "";
+
+        [Required, Compare(nameof(Password), ErrorMessage = "The passwords don't match.")]
+        public string ConfirmPassword { get; set; } = "";
+
+        [Required]
+        public string ServerDirectory { get; set; } = "";
+    }
+}

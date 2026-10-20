@@ -1,0 +1,283 @@
+@page "/"
+@implements IDisposable
+@inject ServerProcessService Server
+@inject SettingsService Settings
+@inject ServerPropertiesService Properties
+@inject UpdateService Updates
+@inject BackupService Backups
+@inject WorldService Worlds
+@inject ToastService Toasts
+
+<PageTitle>Dashboard · Minecraft Server Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Dashboard</h1>
+        <p class="muted">@_motd</p>
+    </div>
+    <ServerControls />
+</div>
+
+@if (_installed is null)
+{
+    <div class="alert alert-warning">
+        <Icon Name="alert" />
+        <div><strong>No server installed.</strong> Download a Minecraft Java Edition server version to get started.</div>
+        <a class="btn btn-primary btn-sm" href="updates">Install server</a>
+    </div>
+}
+@if (!_eulaAccepted)
+{
+    <div class="alert alert-info">
+        <Icon Name="info" />
+        <div>
+            <strong>Accept the Minecraft EULA.</strong> Mojang requires you to agree to the
+            <a href="@ServerPropertiesService.EulaUrl" target="_blank" rel="noopener">Minecraft End User License Agreement</a>
+            before the server can run.
+        </div>
+        <button class="btn btn-primary btn-sm" @onclick="AcceptEula">I agree</button>
+    </div>
+}
+@if (Server.State == ServerState.Crashed)
+{
+    <div class="alert alert-danger">
+        <Icon Name="alert" />
+        <div><strong>The server stopped unexpectedly</strong> (exit code @Server.LastExitCode). Check the console output for the cause.</div>
+        <a class="btn btn-secondary btn-sm" href="console">Open console</a>
+    </div>
+}
+@if (_updateCheck is { UpdateAvailable: true, Latest: { } latest })
+{
+    <div class="alert alert-success">
+        <Icon Name="download" />
+        <div><strong>Minecraft @latest.Id is available.</strong> You're running @_installed?.DisplayName.</div>
+        <a class="btn btn-secondary btn-sm" href="updates">View update</a>
+    </div>
+}
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-label"><Icon Name="activity" /> Status</div>
+        <div class="stat-value"><StatusPill /></div>
+        <div class="stat-sub">@(Server.Uptime is { } up ? $"Up {Fmt.Duration(up)}" : "Not running")</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label"><Icon Name="users" /> Players</div>
+        <div class="stat-value">@Server.OnlinePlayers.Count <span class="stat-of">/ @_maxPlayers</span></div>
+        <div class="stat-sub mono">@_address</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label"><Icon Name="cpu" /> CPU</div>
+        <div class="stat-value">@(Server.IsRunning ? $"{Server.CpuPercent:0}%" : "—")</div>
+        <div class="meter"><div class="meter-fill" style="width: @Fmt.CssPercent(Server.CpuPercent)"></div></div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label"><Icon Name="memory" /> Memory</div>
+        <div class="stat-value">@(Server.IsRunning ? Fmt.Bytes(Server.MemoryBytes) : "—")</div>
+        <div class="meter"><div class="meter-fill" style="width: @Fmt.CssPercent(MemoryPercent)"></div></div>
+        <div class="stat-sub">of @Fmt.Bytes(MaxMemoryBytes) max heap</div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <header class="card-header">
+            <h2><Icon Name="box" /> Server</h2>
+            <a class="btn btn-ghost btn-sm" href="updates">Manage</a>
+        </header>
+        <dl class="kv">
+            <dt>Version</dt>
+            <dd>@(_installed?.DisplayName ?? "Not installed")</dd>
+            <dt>Active world</dt>
+            <dd>
+                @_activeWorld
+                @if (_activeWorldInfo is null)
+                {
+                    <span class="badge badge-info">Generated on next start</span>
+                }
+            </dd>
+            <dt>World size</dt>
+            <dd>@(_activeWorldInfo is { } w ? Fmt.Bytes(w.SizeBytes) : "—")</dd>
+            <dt>Game mode</dt>
+            <dd>@_gameMode · @_difficulty</dd>
+            <dt>Directory</dt>
+            <dd class="mono small truncate" title="@Settings.Current.ServerDirectory">@Settings.Current.ServerDirectory</dd>
+        </dl>
+    </section>
+
+    <section class="card">
+        <header class="card-header">
+            <h2><Icon Name="archive" /> Backups</h2>
+            <a class="btn btn-ghost btn-sm" href="backups">Manage</a>
+        </header>
+        <dl class="kv">
+            <dt>Last backup</dt>
+            <dd>@(_lastBackup is { } b ? $"{Fmt.Ago(b.Created)} ({b.KindLabel}, {Fmt.Bytes(b.SizeBytes)})" : "Never")</dd>
+            <dt>Schedule</dt>
+            <dd>@ScheduleText</dd>
+        </dl>
+        @if (Backups.Progress.IsRunning)
+        {
+            <div class="progress-block">
+                <div class="small muted">@Backups.Progress.Operation: @Backups.Progress.Stage</div>
+                <div class="meter"><div class="meter-fill" style="width: @Fmt.CssPercent(Backups.Progress.Percent)"></div></div>
+            </div>
+        }
+        else
+        {
+            <button class="btn btn-secondary btn-sm" disabled="@(_activeWorldInfo is null)" @onclick="BackupNowAsync">
+                <Icon Name="archive" /> Back up @_activeWorld now
+            </button>
+        }
+    </section>
+
+    <section class="card">
+        <header class="card-header">
+            <h2><Icon Name="users" /> Online players</h2>
+            <a class="btn btn-ghost btn-sm" href="players">Manage</a>
+        </header>
+        @if (Server.OnlinePlayers.Count == 0)
+        {
+            <p class="muted">@(Server.State == ServerState.Running ? "Nobody is online right now." : "The server isn't running.")</p>
+        }
+        else
+        {
+            <ul class="player-list">
+                @foreach (var player in Server.OnlinePlayers)
+                {
+                    <li><span class="avatar">@player[0]</span> @player</li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="card">
+        <header class="card-header">
+            <h2><Icon Name="terminal" /> Recent console output</h2>
+            <a class="btn btn-ghost btn-sm" href="console">Open console</a>
+        </header>
+        <div class="console console-mini">
+            @foreach (var line in Server.GetConsoleSnapshot().TakeLast(12))
+            {
+                <div class="cl @ConsoleStyles.ClassFor(line)" @key="line.Id">@line.Text</div>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private InstalledServer? _installed;
+    private UpdateCheck? _updateCheck;
+    private BackupInfo? _lastBackup;
+    private WorldInfo? _activeWorldInfo;
+    private bool _eulaAccepted;
+    private string _activeWorld = "world";
+    private string _motd = "";
+    private string _maxPlayers = "20";
+    private string _address = "";
+    private string _gameMode = "";
+    private string _difficulty = "";
+
+    private long MaxMemoryBytes => Settings.Current.MaxMemoryMb * 1024L * 1024L;
+    private double MemoryPercent => MaxMemoryBytes > 0 ? 100.0 * Server.MemoryBytes / MaxMemoryBytes : 0;
+
+    private string ScheduleText
+    {
+        get
+        {
+            var current = Settings.Current;
+            if (!current.ScheduledBackupsEnabled) return "Disabled";
+            var next = BackupScheduler.NextRun(current);
+            return $"Every {current.BackupIntervalMinutes / 60.0:0.#} h · next {(next is { } n && n > DateTimeOffset.Now ? Fmt.Date(n) : "soon")}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Server.StateChanged += OnStateChanged;
+        Server.StatsUpdated += OnRefresh;
+        Server.PlayersChanged += OnRefresh;
+        Server.LineReceived += OnLine;
+        Backups.Changed += OnBackupsChanged;
+        LoadInfo();
+
+        if (Settings.Current.IsSetupComplete && _installed is not null)
+        {
+            try { _updateCheck = await Updates.CheckForUpdateAsync(); }
+            catch (Exception) { /* Offline or Mojang unavailable; the Updates page reports details. */ }
+        }
+    }
+
+    private void LoadInfo()
+    {
+        _installed = Updates.GetInstalled();
+        _eulaAccepted = Properties.IsEulaAccepted();
+        var props = Properties.Load();
+        _activeWorld = props.Get("level-name") is { Length: > 0 } level ? level : "world";
+        _motd = Fmt.StripFormatting(props.Get("motd") ?? "A Minecraft Server");
+        _maxPlayers = props.Get("max-players") ?? "20";
+        var ip = props.Get("server-ip");
+        _address = $"{(string.IsNullOrWhiteSpace(ip) ? "*" : ip)}:{props.Get("server-port") ?? "25565"}";
+        _gameMode = Capitalize(props.Get("gamemode") ?? "survival");
+        _difficulty = Capitalize(props.Get("difficulty") ?? "easy");
+        _activeWorldInfo = Worlds.ListWorlds().FirstOrDefault(w => w.IsActive);
+        _lastBackup = Backups.List().FirstOrDefault();
+    }
+
+    private static string Capitalize(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
+    private void AcceptEula()
+    {
+        Properties.AcceptEula();
+        _eulaAccepted = true;
+        Toasts.Success("EULA accepted. You can now start the server.");
+    }
+
+    private async Task BackupNowAsync()
+    {
+        try
+        {
+            var backup = await Backups.CreateAsync(_activeWorld, BackupKind.Manual);
+            Toasts.Success($"Backup created ({Fmt.Bytes(backup.SizeBytes)}).");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Backup failed: {ex.Message}");
+        }
+        LoadInfo();
+    }
+
+    // A state change can mean a world was just generated or the jar replaced, so reload everything.
+    private void OnStateChanged() => InvokeAsync(() =>
+    {
+        LoadInfo();
+        StateHasChanged();
+    });
+
+    private void OnRefresh() => InvokeAsync(StateHasChanged);
+
+    private void OnBackupsChanged() => InvokeAsync(() =>
+    {
+        if (!Backups.Progress.IsRunning) _lastBackup = Backups.List().FirstOrDefault();
+        StateHasChanged();
+    });
+
+    private DateTimeOffset _lastConsoleRender;
+
+    private void OnLine(ConsoleLine _)
+    {
+        // Console output can be very chatty; refresh the preview at most twice a second.
+        if (DateTimeOffset.Now - _lastConsoleRender < TimeSpan.FromMilliseconds(500)) return;
+        _lastConsoleRender = DateTimeOffset.Now;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Server.StateChanged -= OnStateChanged;
+        Server.StatsUpdated -= OnRefresh;
+        Server.PlayersChanged -= OnRefresh;
+        Server.LineReceived -= OnLine;
+        Backups.Changed -= OnBackupsChanged;
+    }
+}

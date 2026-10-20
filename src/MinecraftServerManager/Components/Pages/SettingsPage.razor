@@ -1,0 +1,338 @@
+@page "/settings"
+@inject SettingsService Settings
+@inject JavaService Java
+@inject AuthService Auth
+@inject ServerProcessService Server
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+
+<PageTitle>Settings · Minecraft Server Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Settings</h1>
+        <p class="muted">How the manager launches and supervises the Minecraft server. Changes apply the next time the server starts.</p>
+    </div>
+</div>
+
+<form @onsubmit="Save">
+    <div class="grid-2">
+        <section class="card">
+            <header class="card-header"><h2><Icon Name="folder" /> Server</h2></header>
+            <div class="form-stack">
+                <label class="field">
+                    <span>Server directory</span>
+                    <input class="input mono" @bind="_model.ServerDirectory" @bind:event="oninput" spellcheck="false" />
+                    <small class="muted">Holds the server jar, server.properties and your worlds.</small>
+                </label>
+                <label class="field">
+                    <span>Server jar file name</span>
+                    <input class="input mono" @bind="_model.JarFileName" @bind:event="oninput" spellcheck="false" />
+                </label>
+                <label class="field">
+                    <span>Backup directory</span>
+                    <input class="input mono" @bind="_model.BackupDirectory" @bind:event="oninput" placeholder="@DefaultBackupDirectory" spellcheck="false" />
+                    <small class="muted">Leave blank to use a "backups" folder inside the server directory. A different drive protects against disk failure.</small>
+                </label>
+                <label class="switch">
+                    <input type="checkbox" @bind="_model.AutoStartServer" />
+                    <span class="slider"></span>
+                    <span class="switch-label">Start the Minecraft server when the manager starts</span>
+                </label>
+                <label class="switch">
+                    <input type="checkbox" @bind="_model.AutoRestartOnCrash" />
+                    <span class="slider"></span>
+                    <span class="switch-label">Restart automatically after a crash (up to 3 times in 10 minutes)</span>
+                </label>
+                <label class="field">
+                    <span>Graceful stop timeout</span>
+                    <div class="input-group">
+                        <input class="input" type="number" min="5" max="600" @bind="_model.StopTimeoutSeconds" />
+                        <span class="input-suffix">seconds before the process is killed</span>
+                    </div>
+                </label>
+            </div>
+        </section>
+
+        <section class="card">
+            <header class="card-header"><h2><Icon Name="coffee" /> Java</h2></header>
+            <div class="form-stack">
+                <label class="field">
+                    <span>Java executable</span>
+                    <div class="input-group">
+                        <input class="input mono" list="java-candidates" @bind="_model.JavaPath" @bind:event="oninput" spellcheck="false" />
+                        <button type="button" class="btn btn-ghost btn-sm" disabled="@_probing" @onclick="TestJavaAsync">Test</button>
+                    </div>
+                    <datalist id="java-candidates">
+                        @foreach (var runtime in _detected)
+                        {
+                            <option value="@runtime.Path">Java @runtime.MajorVersion</option>
+                        }
+                    </datalist>
+                    @if (_probeResult is not null)
+                    {
+                        <small class="@(_probeOk ? "text-success" : "field-error")">@_probeResult</small>
+                    }
+                </label>
+                <div>
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_probing" @onclick="DetectAsync"><Icon Name="search" Size="16" /> Detect installed Java</button>
+                    <a class="btn btn-ghost btn-sm" href="@JavaService.DownloadUrl" target="_blank" rel="noopener"><Icon Name="external" Size="16" /> Download Java</a>
+                </div>
+                @if (_detected.Count > 0)
+                {
+                    <ul class="java-list">
+                        @foreach (var runtime in _detected)
+                        {
+                            <li>
+                                <button type="button" class="java-option @(runtime.Path == _model.JavaPath ? "selected" : "")" @onclick="() => _model.JavaPath = runtime.Path">
+                                    <strong>Java @runtime.MajorVersion</strong>
+                                    <span class="muted small">@runtime.Description</span>
+                                    <span class="mono small truncate">@runtime.Path</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+                else if (_detectedOnce)
+                {
+                    <p class="muted small">No Java installations were found. Install a JDK (Temurin 21 or newer is recommended) and detect again.</p>
+                }
+            </div>
+        </section>
+
+        <section class="card">
+            <header class="card-header"><h2><Icon Name="memory" /> Memory &amp; JVM</h2></header>
+            <div class="form-stack">
+                <div class="form-grid">
+                    <label class="field">
+                        <span>Minimum heap (-Xms)</span>
+                        <div class="input-group">
+                            <input class="input" type="number" min="256" step="256" @bind="_model.MinMemoryMb" />
+                            <span class="input-suffix">MB</span>
+                        </div>
+                    </label>
+                    <label class="field">
+                        <span>Maximum heap (-Xmx)</span>
+                        <div class="input-group">
+                            <input class="input" type="number" min="512" step="256" @bind="_model.MaxMemoryMb" />
+                            <span class="input-suffix">MB</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="chips">
+                    <span class="muted small">Presets:</span>
+                    @foreach (var gb in MemoryPresets)
+                    {
+                        <button type="button" class="chip @(_model.MaxMemoryMb == gb * 1024 ? "active" : "")" @onclick="() => SetMemory(gb)">@gb GB</button>
+                    }
+                </div>
+                <small class="muted">This machine has @Fmt.Bytes(TotalSystemMemory) of RAM. Leave at least 2 GB for Windows.</small>
+                <label class="field">
+                    <span>Extra JVM arguments</span>
+                    <textarea class="input mono" rows="3" @bind="_model.JvmArguments" @bind:event="oninput" spellcheck="false" placeholder="-XX:+UseG1GC"></textarea>
+                    <div><button type="button" class="btn btn-ghost btn-sm" @onclick="UseRecommendedFlags">Use recommended G1GC flags</button></div>
+                </label>
+                <label class="field">
+                    <span>Server arguments</span>
+                    <input class="input mono" @bind="_model.ServerArguments" @bind:event="oninput" spellcheck="false" />
+                    <small class="muted">Passed after the jar. Keep <span class="mono">nogui</span> so the server doesn't open a window.</small>
+                </label>
+                <div class="command-preview">
+                    <span class="muted small">Launch command</span>
+                    <code>@_model.JavaPath @CommandLine.Join(ServerProcessService.BuildArguments(_model))</code>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <header class="card-header"><h2><Icon Name="shield" /> Account</h2></header>
+            <div class="form-stack">
+                <p class="muted small">Signed in as <strong>@Settings.Current.AdminUsername</strong>.</p>
+                <label class="field">
+                    <span>Current password</span>
+                    <input class="input" type="password" @bind="_currentPassword" autocomplete="current-password" />
+                </label>
+                <label class="field">
+                    <span>New password</span>
+                    <input class="input" type="password" @bind="_newPassword" @bind:event="oninput" autocomplete="new-password" />
+                </label>
+                <label class="field">
+                    <span>Confirm new password</span>
+                    <input class="input" type="password" @bind="_confirmPassword" @bind:event="oninput" autocomplete="new-password" />
+                    @if (_confirmPassword.Length > 0 && _confirmPassword != _newPassword)
+                    {
+                        <span class="field-error">The passwords don't match.</span>
+                    }
+                </label>
+                <div>
+                    <button type="button" class="btn btn-secondary" disabled="@(_newPassword.Length < AuthService.MinPasswordLength || _newPassword != _confirmPassword)" @onclick="ChangePassword">
+                        Change password
+                    </button>
+                </div>
+                <hr />
+                <dl class="kv kv-compact">
+                    <dt>Data directory</dt>
+                    <dd class="mono small truncate" title="@Settings.DataDirectory">@Settings.DataDirectory</dd>
+                    <dt>Panel version</dt>
+                    <dd>@typeof(Program).Assembly.GetName().Version?.ToString(3)</dd>
+                    <dt>Runtime</dt>
+                    <dd>@System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription on @System.Runtime.InteropServices.RuntimeInformation.OSDescription</dd>
+                </dl>
+            </div>
+        </section>
+    </div>
+
+    <div class="savebar savebar-static">
+        @if (Server.IsRunning)
+        {
+            <span class="muted">The server is running; new launch settings apply after a restart.</span>
+        }
+        else
+        {
+            <span></span>
+        }
+        <button type="submit" class="btn btn-primary"><Icon Name="save" /> Save settings</button>
+    </div>
+</form>
+
+@code {
+    private static readonly int[] MemoryPresets = [2, 4, 6, 8, 12, 16];
+
+    // Based on the widely used G1GC tuning for Minecraft servers. Pair with equal -Xms and -Xmx.
+    private const string RecommendedFlags =
+        "-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions " +
+        "-XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 " +
+        "-XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 " +
+        "-XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:SurvivorRatio=32 " +
+        "-XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1";
+
+    private ManagerSettings _model = new();
+    private List<JavaRuntimeInfo> _detected = [];
+    private bool _detectedOnce;
+    private bool _probing;
+    private bool _probeOk;
+    private string? _probeResult;
+    private string _currentPassword = "";
+    private string _newPassword = "";
+    private string _confirmPassword = "";
+
+    private static long TotalSystemMemory => GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+
+    private string DefaultBackupDirectory => Path.Combine(_model.ServerDirectory, "backups");
+
+    protected override void OnInitialized() => _model = Settings.Current.Clone();
+
+    private void SetMemory(int gb)
+    {
+        _model.MaxMemoryMb = gb * 1024;
+        _model.MinMemoryMb = Math.Min(_model.MinMemoryMb, _model.MaxMemoryMb);
+    }
+
+    private void UseRecommendedFlags()
+    {
+        _model.JvmArguments = RecommendedFlags;
+        _model.MinMemoryMb = _model.MaxMemoryMb;
+        Toasts.Info("Recommended flags applied, and minimum heap set equal to maximum. Save to keep them.");
+    }
+
+    private async Task DetectAsync()
+    {
+        _probing = true;
+        try
+        {
+            _detected = (await Java.DetectAsync()).ToList();
+            _detectedOnce = true;
+        }
+        finally
+        {
+            _probing = false;
+        }
+    }
+
+    private async Task TestJavaAsync()
+    {
+        _probing = true;
+        try
+        {
+            var info = await Java.ProbeAsync(_model.JavaPath.Trim());
+            _probeOk = info is not null;
+            _probeResult = info is null
+                ? "Java could not be run from this path."
+                : $"Found Java {info.MajorVersion} ({info.Version}).";
+        }
+        finally
+        {
+            _probing = false;
+        }
+    }
+
+    private void Save()
+    {
+        var error = Validate();
+        if (error is not null)
+        {
+            Toasts.Error(error);
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(_model.ServerDirectory.Trim());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Toasts.Error($"Can't create the server directory: {ex.Message}");
+            return;
+        }
+
+        Settings.Update(s =>
+        {
+            s.ServerDirectory = Path.GetFullPath(_model.ServerDirectory.Trim());
+            s.JarFileName = _model.JarFileName.Trim();
+            s.BackupDirectory = string.IsNullOrWhiteSpace(_model.BackupDirectory) ? "" : Path.GetFullPath(_model.BackupDirectory.Trim());
+            s.JavaPath = _model.JavaPath.Trim();
+            s.MinMemoryMb = _model.MinMemoryMb;
+            s.MaxMemoryMb = _model.MaxMemoryMb;
+            s.JvmArguments = _model.JvmArguments.Trim();
+            s.ServerArguments = _model.ServerArguments.Trim();
+            s.AutoStartServer = _model.AutoStartServer;
+            s.AutoRestartOnCrash = _model.AutoRestartOnCrash;
+            s.StopTimeoutSeconds = _model.StopTimeoutSeconds;
+        });
+        _model = Settings.Current.Clone();
+        Toasts.Success(Server.IsRunning ? "Settings saved. Restart the server to apply them." : "Settings saved.");
+    }
+
+    private string? Validate()
+    {
+        if (!Path.IsPathFullyQualified(_model.ServerDirectory.Trim())) return "The server directory must be a full path, e.g. C:\\MinecraftServer.";
+        if (!string.IsNullOrWhiteSpace(_model.BackupDirectory) && !Path.IsPathFullyQualified(_model.BackupDirectory.Trim()))
+            return "The backup directory must be a full path.";
+        var jar = _model.JarFileName.Trim();
+        if (jar.Length == 0 || jar != Path.GetFileName(jar) || !jar.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))
+            return "The jar file name must be a plain file name ending in .jar.";
+        if (string.IsNullOrWhiteSpace(_model.JavaPath)) return "Enter the path to Java.";
+        if (_model.MaxMemoryMb < 512) return "Give the server at least 512 MB of memory.";
+        if (_model.MinMemoryMb < 0 || _model.MinMemoryMb > _model.MaxMemoryMb) return "The minimum heap can't be larger than the maximum heap.";
+        if (_model.StopTimeoutSeconds is < 5 or > 600) return "The stop timeout must be between 5 and 600 seconds.";
+        return null;
+    }
+
+    private void ChangePassword()
+    {
+        try
+        {
+            Auth.ChangePassword(_currentPassword, _newPassword);
+            Toasts.Success("Password changed. Please sign in again.");
+            Navigation.NavigateTo("login", forceLoad: true);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            _currentPassword = _newPassword = _confirmPassword = "";
+        }
+    }
+}

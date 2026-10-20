@@ -1,0 +1,74 @@
+@implements IDisposable
+@inject ServerProcessService Server
+@inject ToastService Toasts
+
+<div class="btn-row">
+    @if (!Server.IsRunning)
+    {
+        <button class="btn btn-primary" disabled="@_busy" @onclick="StartAsync">
+            <Icon Name="play" /> Start
+        </button>
+    }
+    else
+    {
+        <button class="btn btn-secondary" disabled="@(_busy || Server.State == ServerState.Stopping)" @onclick="RestartAsync">
+            <Icon Name="restart" /> Restart
+        </button>
+        <button class="btn btn-danger" disabled="@(_busy || Server.State == ServerState.Stopping)" @onclick="StopAsync">
+            <Icon Name="stop" /> Stop
+        </button>
+    }
+    @if (Server.State is ServerState.Starting or ServerState.Stopping)
+    {
+        <button class="btn btn-ghost-danger" title="Force-kill the server process" @onclick="KillAsync">
+            <Icon Name="zap" /> Kill
+        </button>
+    }
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    private bool _busy;
+
+    protected override void OnInitialized() => Server.StateChanged += OnStateChanged;
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    private Task StartAsync() => RunAsync(() => Server.StartServerAsync(), "Server is starting…");
+
+    private Task StopAsync() => RunAsync(() => Server.StopServerAsync(), "Server stopped.");
+
+    private Task RestartAsync() => RunAsync(() => Server.RestartServerAsync(), "Server is restarting…");
+
+    private async Task KillAsync()
+    {
+        if (await _confirm.ConfirmAsync("Force-kill the server?",
+                "The Java process is terminated immediately without saving. Any changes since the last autosave may be lost.",
+                "Kill process", danger: true))
+        {
+            Server.Kill();
+        }
+    }
+
+    private async Task RunAsync(Func<Task> action, string successMessage)
+    {
+        _busy = true;
+        try
+        {
+            await action();
+            Toasts.Success(successMessage);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    public void Dispose() => Server.StateChanged -= OnStateChanged;
+}

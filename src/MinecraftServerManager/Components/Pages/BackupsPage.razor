@@ -1,0 +1,290 @@
+@page "/backups"
+@implements IDisposable
+@inject BackupService Backups
+@inject WorldService Worlds
+@inject SettingsService Settings
+@inject ServerProcessService Server
+@inject ToastService Toasts
+
+<PageTitle>Backups · Minecraft Server Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Backups</h1>
+        <p class="muted">Zip snapshots of your worlds. Backups of a running world are taken safely by pausing autosave and flushing to disk first.</p>
+    </div>
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <header class="card-header"><h2><Icon Name="archive" /> Create a backup</h2></header>
+        @if (_worlds.Count == 0)
+        {
+            <p class="muted">There are no worlds to back up yet.</p>
+        }
+        else
+        {
+            <div class="form-inline">
+                <select class="input" @bind="_selectedWorld" aria-label="World to back up">
+                    @foreach (var world in _worlds)
+                    {
+                        <option value="@world.Name">@world.Name@(world.IsActive ? " (active)" : "") · @Fmt.Bytes(world.SizeBytes)</option>
+                    }
+                </select>
+                <button class="btn btn-primary" disabled="@(Backups.Progress.IsRunning || _busy)" @onclick="CreateAsync"><Icon Name="archive" /> Back up now</button>
+            </div>
+        }
+        @if (Backups.Progress is { IsRunning: true } progress)
+        {
+            <div class="progress-block">
+                <div class="progress-label">
+                    <span>@progress.Operation of <strong>@progress.World</strong>: @progress.Stage</span>
+                    @if (progress.FilesTotal > 0)
+                    {
+                        <span class="muted small">@progress.FilesDone / @progress.FilesTotal files · @Fmt.Bytes(progress.BytesDone) of @Fmt.Bytes(progress.BytesTotal)</span>
+                    }
+                </div>
+                <div class="meter meter-lg"><div class="meter-fill" style="width: @Fmt.CssPercent(progress.Percent)"></div></div>
+            </div>
+        }
+        <dl class="kv kv-compact storage">
+            <dt>Location</dt>
+            <dd class="mono small truncate" title="@Backups.BackupDirectory">@Backups.BackupDirectory</dd>
+            <dt>Used</dt>
+            <dd>@Fmt.Bytes(_backups.Sum(b => b.SizeBytes)) in @_backups.Count backup@(_backups.Count == 1 ? "" : "s")</dd>
+            <dt>Free space</dt>
+            <dd>@(FileUtil.GetFreeSpace(Backups.BackupDirectory) is { } free ? Fmt.Bytes(free) : "Unknown")</dd>
+        </dl>
+    </section>
+
+    <section class="card">
+        <header class="card-header"><h2><Icon Name="clock" /> Schedule</h2></header>
+        <div class="form-stack">
+            <label class="switch">
+                <input type="checkbox" @bind="_schedule.Enabled" />
+                <span class="slider"></span>
+                <span class="switch-label">Automatically back up the active world</span>
+            </label>
+            <div class="form-grid">
+                <label class="field">
+                    <span>Every</span>
+                    <select class="input" @bind="_schedule.IntervalMinutes" disabled="@(!_schedule.Enabled)">
+                        @foreach (var (minutes, label) in Intervals)
+                        {
+                            <option value="@minutes">@label</option>
+                        }
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Keep the newest</span>
+                    <div class="input-group">
+                        <input class="input" type="number" min="1" max="1000" @bind="_schedule.Retention" disabled="@(!_schedule.Enabled)" />
+                        <span class="input-suffix">scheduled backups</span>
+                    </div>
+                </label>
+            </div>
+            <label class="check"><input type="checkbox" @bind="_schedule.OnlyWhenRunning" /> Only while the server is running</label>
+            <label class="check"><input type="checkbox" @bind="_schedule.Announce" /> Announce backups in game chat</label>
+            <label class="check"><input type="checkbox" @bind="_schedule.BeforeUpdate" /> Back up before installing server updates</label>
+            <p class="muted small">
+                Retention only removes scheduled backups. Manual and safety backups are kept until you delete them.
+                @if (BackupScheduler.NextRun(Settings.Current) is { } next)
+                {
+                    <span>Next backup: @(next > DateTimeOffset.Now ? Fmt.Date(next) : "within a minute").</span>
+                }
+            </p>
+            <div><button class="btn btn-secondary" @onclick="SaveSchedule"><Icon Name="save" /> Save schedule</button></div>
+        </div>
+    </section>
+</div>
+
+<section class="card">
+    <header class="card-header">
+        <h2>Backup history</h2>
+        <button class="btn btn-ghost btn-sm" @onclick="Load"><Icon Name="refresh" Size="16" /> Refresh</button>
+    </header>
+    @if (_backups.Count == 0)
+    {
+        <p class="muted">No backups yet.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr><th>World</th><th>Created</th><th>Type</th><th class="num">Size</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var backup in _backups)
+                    {
+                        <tr @key="backup.FileName">
+                            <td><strong>@backup.World</strong><div class="muted small mono truncate">@backup.FileName</div></td>
+                            <td>@Fmt.Date(backup.Created)<div class="muted small">@Fmt.Ago(backup.Created)</div></td>
+                            <td><span class="badge @BadgeFor(backup.Kind)">@backup.KindLabel</span></td>
+                            <td class="num">@Fmt.Bytes(backup.SizeBytes)</td>
+                            <td class="row-actions">
+                                <a class="btn btn-ghost btn-sm" href="api/backups/@Uri.EscapeDataString(backup.FileName)" download="@backup.FileName" data-enhance-nav="false">
+                                    <Icon Name="download" Size="16" /> Download
+                                </a>
+                                <button class="btn btn-ghost btn-sm" disabled="@(Backups.Progress.IsRunning || _busy)" @onclick="() => RestoreAsync(backup)"><Icon Name="undo" Size="16" /> Restore</button>
+                                <button class="icon-btn danger" title="Delete backup" aria-label="Delete backup" disabled="@_busy" @onclick="() => DeleteAsync(backup)"><Icon Name="trash" Size="16" /></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private static readonly (int Minutes, string Label)[] Intervals =
+    [
+        (30, "30 minutes"), (60, "hour"), (120, "2 hours"), (180, "3 hours"), (360, "6 hours"),
+        (720, "12 hours"), (1440, "day"), (10080, "week"),
+    ];
+
+    private sealed class ScheduleModel
+    {
+        public bool Enabled { get; set; }
+        public int IntervalMinutes { get; set; }
+        public int Retention { get; set; }
+        public bool OnlyWhenRunning { get; set; }
+        public bool Announce { get; set; }
+        public bool BeforeUpdate { get; set; }
+    }
+
+    private ConfirmDialog _confirm = default!;
+    private List<BackupInfo> _backups = [];
+    private List<WorldInfo> _worlds = [];
+    private string _selectedWorld = "";
+    private ScheduleModel _schedule = new();
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        Load();
+        var current = Settings.Current;
+        _schedule = new ScheduleModel
+        {
+            Enabled = current.ScheduledBackupsEnabled,
+            IntervalMinutes = Intervals.Any(i => i.Minutes == current.BackupIntervalMinutes) ? current.BackupIntervalMinutes : 360,
+            Retention = current.BackupRetentionCount,
+            OnlyWhenRunning = current.BackupOnlyWhenRunning,
+            Announce = current.AnnounceBackups,
+            BeforeUpdate = current.BackupBeforeUpdate,
+        };
+        Backups.Changed += OnChanged;
+    }
+
+    private void Load()
+    {
+        _backups = Backups.List().ToList();
+        _worlds = Worlds.ListWorlds().ToList();
+        if (!_worlds.Any(w => w.Name == _selectedWorld))
+            _selectedWorld = _worlds.FirstOrDefault(w => w.IsActive)?.Name ?? _worlds.FirstOrDefault()?.Name ?? "";
+    }
+
+    private static string BadgeFor(BackupKind kind) => kind switch
+    {
+        BackupKind.Manual => "badge-info",
+        BackupKind.Scheduled => "badge-success",
+        _ => "badge-warning",
+    };
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedWorld)) return;
+        _busy = true;
+        try
+        {
+            var backup = await Backups.CreateAsync(_selectedWorld, BackupKind.Manual);
+            Toasts.Success($"Backup created: {backup.FileName} ({Fmt.Bytes(backup.SizeBytes)}).");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Backup failed: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+            Load();
+        }
+    }
+
+    private async Task RestoreAsync(BackupInfo backup)
+    {
+        var activeAffected = string.Equals(backup.World, Worlds.ActiveWorld, StringComparison.OrdinalIgnoreCase) && Server.IsRunning;
+        var result = await _confirm.ShowAsync(new ConfirmDialog.Options(
+            $"Restore '{backup.World}' from {Fmt.Date(backup.Created)}?",
+            "The current copy of this world is replaced with the backup." +
+                (activeAffected ? " The server is running this world, so it will be stopped and started again." : ""),
+            "Restore backup",
+            Danger: true,
+            CheckboxLabel: "Back up the current world first",
+            CheckboxDefault: true));
+        if (!result.Confirmed) return;
+
+        _busy = true;
+        try
+        {
+            await Backups.RestoreAsync(backup.FileName, result.Checked);
+            Toasts.Success($"World '{backup.World}' restored.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Restore failed: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+            Load();
+        }
+    }
+
+    private async Task DeleteAsync(BackupInfo backup)
+    {
+        if (!await _confirm.ConfirmAsync("Delete backup?", $"{backup.FileName} ({Fmt.Bytes(backup.SizeBytes)}) will be permanently deleted.", "Delete", danger: true))
+            return;
+        try
+        {
+            Backups.Delete(backup.FileName);
+            Toasts.Success("Backup deleted.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        Load();
+    }
+
+    private void SaveSchedule()
+    {
+        if (_schedule.Retention < 1)
+        {
+            Toasts.Error("Keep at least one scheduled backup.");
+            return;
+        }
+        Settings.Update(s =>
+        {
+            if (_schedule.Enabled && !s.ScheduledBackupsEnabled) s.LastScheduledBackup = null;
+            s.ScheduledBackupsEnabled = _schedule.Enabled;
+            s.BackupIntervalMinutes = _schedule.IntervalMinutes;
+            s.BackupRetentionCount = _schedule.Retention;
+            s.BackupOnlyWhenRunning = _schedule.OnlyWhenRunning;
+            s.AnnounceBackups = _schedule.Announce;
+            s.BackupBeforeUpdate = _schedule.BeforeUpdate;
+        });
+        Toasts.Success("Backup schedule saved.");
+    }
+
+    private void OnChanged() => InvokeAsync(() =>
+    {
+        if (!Backups.Progress.IsRunning) Load();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Backups.Changed -= OnChanged;
+}

@@ -1,0 +1,310 @@
+@page "/properties"
+@implements IDisposable
+@inject ServerPropertiesService Properties
+@inject ServerProcessService Server
+@inject ToastService Toasts
+
+<PageTitle>Server Properties · Minecraft Server Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Server Properties</h1>
+        <p class="muted">Edit <span class="mono">server.properties</span>. Most changes take effect the next time the server starts.</p>
+    </div>
+    <button class="btn btn-ghost" @onclick="Load"><Icon Name="refresh" /> Reload from disk</button>
+</div>
+
+@if (!_fileExists)
+{
+    <div class="alert alert-info">
+        <Icon Name="info" />
+        <div>
+            <strong>server.properties doesn't exist yet.</strong> The values below are Minecraft's defaults.
+            Save to create the file now, or start the server once and it will generate one.
+        </div>
+    </div>
+}
+
+<div class="props-layout">
+    <nav class="props-nav" aria-label="Property categories">
+        <button class="pill @(_category is null ? "active" : "")" @onclick="() => _category = null">
+            All <span class="count">@_rows.Count(r => !r.Removed)</span>
+        </button>
+        @foreach (var category in PropertySchema.Categories)
+        {
+            var count = _rows.Count(r => !r.Removed && r.Category == category);
+            if (count == 0) continue;
+            <button class="pill @(_category == category ? "active" : "")" @onclick="() => _category = category">
+                @category <span class="count">@count</span>
+            </button>
+        }
+    </nav>
+
+    <div class="props-main">
+        <div class="search-box">
+            <Icon Name="search" Size="16" />
+            <input class="input" placeholder="Search properties…" @bind="_search" @bind:event="oninput" aria-label="Search properties" />
+        </div>
+
+        @foreach (var group in FilteredRows().GroupBy(r => r.Category).OrderBy(g => Array.IndexOf(PropertySchema.Categories, g.Key)))
+        {
+            <section class="card props-card">
+                <header class="card-header"><h2>@group.Key</h2></header>
+                @foreach (var row in group)
+                {
+                    <div class="prop-row @(row.IsModified ? "modified" : "")" @key="row.Key">
+                        <div class="prop-meta">
+                            <label class="prop-key mono" for="prop-@row.Key">@row.Key</label>
+                            @if (row.Definition is { } def)
+                            {
+                                <p class="prop-desc">@def.Description</p>
+                            }
+                            else
+                            {
+                                <p class="prop-desc">Not a recognised vanilla property (it may be new, or used by a mod).</p>
+                            }
+                        </div>
+                        <div class="prop-input">
+                            @RenderInput(row)
+                            @if (row.Error is { } error)
+                            {
+                                <div class="field-error">@error</div>
+                            }
+                        </div>
+                        <div class="prop-actions">
+                            @if (row.IsModified && !row.Added)
+                            {
+                                <button class="icon-btn" title="Revert" aria-label="Revert @row.Key" @onclick="() => row.Value = row.Original"><Icon Name="undo" Size="16" /></button>
+                            }
+                            @if (row.Definition is null || row.Added)
+                            {
+                                <button class="icon-btn danger" title="Remove" aria-label="Remove @row.Key" @onclick="() => Remove(row)"><Icon Name="trash" Size="16" /></button>
+                            }
+                        </div>
+                    </div>
+                }
+            </section>
+        }
+
+        @if (!FilteredRows().Any())
+        {
+            <div class="empty-state small"><p class="muted">No properties match your search.</p></div>
+        }
+
+        <section class="card">
+            <header class="card-header"><h2>Add a property</h2></header>
+            <div class="form-inline">
+                <select class="input" @bind="_addKey" aria-label="Property to add">
+                    <option value="">Choose a known property…</option>
+                    @foreach (var def in PropertySchema.All.Where(d => _rows.All(r => r.Key != d.Key || r.Removed)))
+                    {
+                        <option value="@def.Key">@def.Key</option>
+                    }
+                    <option value="@CustomKey">Custom key…</option>
+                </select>
+                @if (_addKey == CustomKey)
+                {
+                    <input class="input mono" placeholder="property-name" @bind="_customKey" @bind:event="oninput" aria-label="Custom property name" />
+                }
+                <button class="btn btn-secondary" disabled="@string.IsNullOrEmpty(_addKey)" @onclick="Add"><Icon Name="plus" /> Add</button>
+            </div>
+        </section>
+    </div>
+</div>
+
+@if (ChangeCount > 0 || !_fileExists)
+{
+    <div class="savebar">
+        <span>@(_fileExists ? $"{ChangeCount} unsaved change{(ChangeCount == 1 ? "" : "s")}" : "server.properties will be created")</span>
+        <div class="btn-row">
+            @if (_fileExists)
+            {
+                <button class="btn btn-ghost" @onclick="Load">Discard</button>
+            }
+            <button class="btn btn-primary" disabled="@HasErrors" @onclick="() => SaveAsync(false)"><Icon Name="save" /> Save</button>
+            @if (Server.IsRunning)
+            {
+                <button class="btn btn-secondary" disabled="@HasErrors" @onclick="() => SaveAsync(true)"><Icon Name="restart" /> Save &amp; restart</button>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private const string CustomKey = "__custom";
+
+    private sealed class Row
+    {
+        public required string Key { get; init; }
+        public PropertyDefinition? Definition { get; init; }
+        public string Original { get; init; } = "";
+        public string Value { get; set; } = "";
+        public bool Added { get; init; }
+        public bool Removed { get; set; }
+        public bool Reveal { get; set; }
+        public string Category => Definition?.Category ?? PropertySchema.OtherCategory;
+        public bool IsModified => Added || Removed || Value != Original;
+        public string? Error => Definition is null || Removed ? null : PropertySchema.Validate(Definition, Value);
+    }
+
+    private List<Row> _rows = [];
+    private bool _fileExists;
+    private string? _category;
+    private string _search = "";
+    private string _addKey = "";
+    private string _customKey = "";
+
+    private int ChangeCount => _rows.Count(r => r.IsModified);
+    private bool HasErrors => _rows.Any(r => r.Error is not null);
+
+    protected override void OnInitialized()
+    {
+        Load();
+        Server.StateChanged += OnStateChanged;
+    }
+
+    private void Load()
+    {
+        _fileExists = Properties.FileExists;
+        if (_fileExists)
+        {
+            _rows = Properties.Load().Entries
+                .Select(e => new Row { Key = e.Key, Definition = PropertySchema.Find(e.Key), Original = e.Value, Value = e.Value })
+                .ToList();
+        }
+        else
+        {
+            _rows = PropertySchema.All
+                .Select(d => new Row { Key = d.Key, Definition = d, Original = d.Default, Value = d.Default })
+                .ToList();
+        }
+    }
+
+    private IEnumerable<Row> FilteredRows()
+    {
+        var rows = _rows.Where(r => !r.Removed);
+        if (_category is not null) rows = rows.Where(r => r.Category == _category);
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var term = _search.Trim();
+            rows = rows.Where(r => r.Key.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (r.Definition?.Description.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+        return rows;
+    }
+
+    private RenderFragment RenderInput(Row row) => __builder =>
+    {
+        var id = "prop-" + row.Key;
+        switch (row.Definition?.Kind)
+        {
+            case PropertyKind.Boolean:
+                <label class="switch">
+                    <input id="@id" type="checkbox" checked="@(row.Value == "true")"
+                           @onchange="@(e => row.Value = e.Value is true ? "true" : "false")" />
+                    <span class="slider"></span>
+                    <span class="switch-label">@(row.Value == "true" ? "Enabled" : "Disabled")</span>
+                </label>
+                break;
+            case PropertyKind.Integer:
+                <input id="@id" class="input" type="number" min="@row.Definition.Min" max="@row.Definition.Max"
+                       @bind="row.Value" @bind:event="oninput" />
+                break;
+            case PropertyKind.Choice:
+                <select id="@id" class="input" @bind="row.Value">
+                    @foreach (var choice in row.Definition.Choices!)
+                    {
+                        <option value="@choice">@choice</option>
+                    }
+                    @if (!row.Definition.Choices!.Contains(row.Value))
+                    {
+                        <option value="@row.Value">@row.Value</option>
+                    }
+                </select>
+                break;
+            case PropertyKind.Password:
+                <div class="input-group">
+                    <input id="@id" class="input mono" type="@(row.Reveal ? "text" : "password")" @bind="row.Value" @bind:event="oninput" autocomplete="new-password" />
+                    <button class="btn btn-ghost btn-sm" @onclick="() => row.Reveal = !row.Reveal">@(row.Reveal ? "Hide" : "Show")</button>
+                </div>
+                break;
+            case PropertyKind.Json:
+                <textarea id="@id" class="input mono" rows="2" @bind="row.Value" @bind:event="oninput" spellcheck="false"></textarea>
+                break;
+            default:
+                <input id="@id" class="input" @bind="row.Value" @bind:event="oninput" spellcheck="false" />
+                break;
+        }
+    };
+
+    private void Add()
+    {
+        var key = (_addKey == CustomKey ? _customKey : _addKey).Trim();
+        if (key.Length == 0 || key.Any(char.IsWhiteSpace) || key.Contains('='))
+        {
+            Toasts.Error("Property names can't be empty or contain spaces or '='.");
+            return;
+        }
+        var existing = _rows.FirstOrDefault(r => r.Key == key);
+        if (existing is { Removed: true })
+        {
+            existing.Removed = false;
+        }
+        else if (existing is not null)
+        {
+            Toasts.Warning($"'{key}' is already in the file.");
+            return;
+        }
+        else
+        {
+            var definition = PropertySchema.Find(key);
+            _rows.Add(new Row { Key = key, Definition = definition, Value = definition?.Default ?? "", Added = true });
+        }
+        _category = null;
+        _search = key;
+        _addKey = "";
+        _customKey = "";
+    }
+
+    private void Remove(Row row)
+    {
+        if (row.Added) _rows.Remove(row);
+        else row.Removed = true;
+    }
+
+    private async Task SaveAsync(bool restart)
+    {
+        if (HasErrors)
+        {
+            Toasts.Error("Fix the highlighted values before saving.");
+            return;
+        }
+
+        var toWrite = _rows.Where(r => !r.Removed && (!_fileExists || r.IsModified));
+        var values = toWrite.ToDictionary(r => r.Key, r => r.Definition?.Kind == PropertyKind.Integer ? r.Value.Trim() : r.Value);
+        var removed = _rows.Where(r => r.Removed && !r.Added).Select(r => r.Key).ToList();
+        try
+        {
+            Properties.Update(values, removed);
+            Load();
+            if (restart)
+            {
+                Toasts.Info("Saved. Restarting the server…");
+                await Server.RestartServerAsync();
+                Toasts.Success("Server restarted with the new settings.");
+            }
+            else
+            {
+                Toasts.Success(Server.IsRunning ? "Saved. Restart the server to apply the changes." : "Server properties saved.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Could not save: {ex.Message}");
+        }
+    }
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Server.StateChanged -= OnStateChanged;
+}

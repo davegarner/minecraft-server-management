@@ -1,0 +1,433 @@
+@page "/worlds"
+@implements IDisposable
+@inject WorldService Worlds
+@inject ServerProcessService Server
+@inject ServerPropertiesService Properties
+@inject BackupService Backups
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Worlds · Minecraft Server Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Worlds</h1>
+        <p class="muted">Generate new worlds, switch the world the server hosts, and import or remove worlds.</p>
+    </div>
+    <div class="btn-row">
+        <button class="btn btn-secondary" @onclick="() => _showImport = true"><Icon Name="upload" /> Import world</button>
+        <button class="btn btn-primary" @onclick="OpenCreate"><Icon Name="plus" /> New world</button>
+    </div>
+</div>
+
+@if (!_worlds.Any(w => w.IsActive))
+{
+    <div class="alert alert-info">
+        <Icon Name="info" />
+        <div>
+            The active world <strong>@_activeWorld</strong> hasn't been generated yet.
+            Minecraft creates it the next time the server starts.
+        </div>
+        @if (!Server.IsRunning)
+        {
+            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="StartServerAsync"><Icon Name="play" /> Start &amp; generate</button>
+        }
+    </div>
+}
+
+@if (_worlds.Count == 0)
+{
+    <div class="empty-state">
+        <Icon Name="globe" Size="40" />
+        <h2>No worlds yet</h2>
+        <p class="muted">Create a new world or import an existing one (for example a singleplayer save).</p>
+    </div>
+}
+else
+{
+    <div class="world-grid">
+        @foreach (var world in _worlds)
+        {
+            <article class="card world-card @(world.IsActive ? "active" : "")" @key="world.Name">
+                <header class="world-head">
+                    <span class="world-icon" aria-hidden="true"></span>
+                    <div class="world-title">
+                        <h3>@world.Name</h3>
+                        @if (world.IsActive)
+                        {
+                            <span class="badge badge-success">Active@(Server.IsRunning ? " · running" : "")</span>
+                        }
+                        @if (world.Level?.Hardcore == true)
+                        {
+                            <span class="badge badge-danger">Hardcore</span>
+                        }
+                    </div>
+                </header>
+                <dl class="kv kv-compact">
+                    <dt>Version</dt>
+                    <dd>@(world.Level?.Version ?? "—")</dd>
+                    <dt>Game mode</dt>
+                    <dd>@(world.Level?.GameModeName ?? "—")</dd>
+                    <dt>Seed</dt>
+                    <dd class="seed">
+                        <span class="mono">@(world.Level?.Seed?.ToString() ?? "—")</span>
+                        @if (world.Level?.Seed is { } seed)
+                        {
+                            <button class="icon-btn" title="Copy seed" aria-label="Copy seed" @onclick="() => CopyAsync(seed.ToString())"><Icon Name="copy" Size="14" /></button>
+                        }
+                    </dd>
+                    <dt>Size</dt>
+                    <dd>@Fmt.Bytes(world.SizeBytes)</dd>
+                    <dt>Last played</dt>
+                    <dd>@(world.Level?.LastPlayed is { } played ? Fmt.Ago(played) : Fmt.Ago(world.LastModified))</dd>
+                </dl>
+                <footer class="card-actions">
+                    @if (!world.IsActive)
+                    {
+                        <button class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => SetActiveAsync(world)"><Icon Name="star" Size="16" /> Set active</button>
+                    }
+                    <button class="btn btn-secondary btn-sm" disabled="@(_busy || Backups.Progress.IsRunning)" @onclick="() => BackupAsync(world)"><Icon Name="archive" Size="16" /> Back up</button>
+                    <button class="btn btn-ghost-danger btn-sm" disabled="@_busy" @onclick="() => DeleteAsync(world)"><Icon Name="trash" Size="16" /> Delete</button>
+                </footer>
+            </article>
+        }
+    </div>
+}
+
+@if (Backups.Progress.IsRunning)
+{
+    <div class="alert alert-info">
+        <Icon Name="archive" />
+        <div class="grow">
+            <div>@Backups.Progress.Operation of <strong>@Backups.Progress.World</strong>: @Backups.Progress.Stage</div>
+            <div class="meter"><div class="meter-fill" style="width: @Fmt.CssPercent(Backups.Progress.Percent)"></div></div>
+        </div>
+    </div>
+}
+
+@if (_showCreate)
+{
+    <div class="modal-backdrop" @onclick="() => _showCreate = false"></div>
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="create-title">
+        <form @onsubmit="CreateAsync">
+            <div class="modal-header">
+                <h2 id="create-title">Create a new world</h2>
+                <button type="button" class="icon-btn" aria-label="Close" @onclick="() => _showCreate = false"><Icon Name="x" /></button>
+            </div>
+            <div class="modal-body">
+                <p class="muted small">
+                    Minecraft generates a world the first time the server starts with it. Creating a world makes it the
+                    active world and writes these settings to server.properties.
+                </p>
+                <div class="form-grid">
+                    <label class="field span-2">
+                        <span>World name</span>
+                        <input class="input" @bind="_new.Name" @bind:event="oninput" placeholder="e.g. survival-2026" autofocus />
+                        @if (_new.Name.Length > 0 && WorldFolders.ValidateName(_new.Name) is { } nameError)
+                        {
+                            <span class="field-error">@nameError</span>
+                        }
+                        else if (_new.Name.Length > 0 && Worlds.WorldExists(_new.Name.Trim()))
+                        {
+                            <span class="field-error">A world with this name already exists.</span>
+                        }
+                    </label>
+                    <label class="field span-2">
+                        <span>Seed <small class="muted">(optional; leave blank for random)</small></span>
+                        <div class="input-group">
+                            <input class="input mono" @bind="_new.Seed" @bind:event="oninput" placeholder="Random" />
+                            <button type="button" class="btn btn-ghost btn-sm" title="Generate a random seed" @onclick="RandomSeed"><Icon Name="dice" Size="16" /> Random</button>
+                        </div>
+                    </label>
+                    <label class="field">
+                        <span>World type</span>
+                        <select class="input" @bind="_new.LevelType">
+                            @foreach (var (value, label) in WorldTypes)
+                            {
+                                <option value="@value">@label</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Game mode</span>
+                        <select class="input" @bind="_new.GameMode">
+                            <option value="survival">Survival</option>
+                            <option value="creative">Creative</option>
+                            <option value="adventure">Adventure</option>
+                            <option value="spectator">Spectator</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Difficulty</span>
+                        <select class="input" @bind="_new.Difficulty" disabled="@_new.Hardcore">
+                            <option value="peaceful">Peaceful</option>
+                            <option value="easy">Easy</option>
+                            <option value="normal">Normal</option>
+                            <option value="hard">Hard</option>
+                        </select>
+                    </label>
+                    <div class="field">
+                        <span>Options</span>
+                        <label class="check"><input type="checkbox" @bind="_new.GenerateStructures" /> Generate structures</label>
+                        <label class="check"><input type="checkbox" @bind="_new.Hardcore" /> Hardcore</label>
+                    </div>
+                    @if (_new.LevelType is "minecraft:flat" or "minecraft:single_biome_surface")
+                    {
+                        <label class="field span-2">
+                            <span>Generator settings <small class="muted">(JSON)</small></span>
+                            @if (_new.LevelType == "minecraft:flat")
+                            {
+                                <div class="chips">
+                                    @foreach (var (label, json) in FlatPresets)
+                                    {
+                                        <button type="button" class="chip" @onclick="() => _new.GeneratorSettings = json">@label</button>
+                                    }
+                                </div>
+                            }
+                            <textarea class="input mono" rows="3" @bind="_new.GeneratorSettings" @bind:event="oninput" spellcheck="false" placeholder="{}"></textarea>
+                        </label>
+                    }
+                    <label class="check span-2">
+                        <input type="checkbox" @bind="_new.StartServer" />
+                        @(Server.IsRunning ? "Restart the server now to generate the world" : "Start the server now to generate the world")
+                    </label>
+                </div>
+                @if (_createError is not null)
+                {
+                    <div class="alert alert-danger"><Icon Name="alert" /><div>@_createError</div></div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="() => _showCreate = false">Cancel</button>
+                <button type="submit" class="btn btn-primary" disabled="@(_busy || !CanCreate)"><Icon Name="plus" /> Create world</button>
+            </div>
+        </form>
+    </div>
+}
+
+@if (_showImport)
+{
+    <div class="modal-backdrop" @onclick="() => _showImport = false"></div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+        <form method="post" action="api/worlds/import" enctype="multipart/form-data" data-enhance="false"
+              onsubmit="this.querySelector('[type=submit]').disabled = true; this.querySelector('[type=submit]').textContent = 'Uploading…';">
+            <AntiforgeryToken />
+            <div class="modal-header">
+                <h2 id="import-title">Import a world</h2>
+                <button type="button" class="icon-btn" aria-label="Close" @onclick="() => _showImport = false"><Icon Name="x" /></button>
+            </div>
+            <div class="modal-body">
+                <p class="muted small">
+                    Upload a .zip of a Java Edition world folder (the folder containing <span class="mono">level.dat</span>),
+                    such as a singleplayer save from <span class="mono">%APPDATA%\.minecraft\saves</span>.
+                </p>
+                <label class="field">
+                    <span>World archive (.zip)</span>
+                    <input class="input" type="file" name="file" accept=".zip,application/zip" required />
+                </label>
+                <label class="field">
+                    <span>World name <small class="muted">(optional; defaults to the file name)</small></span>
+                    <input class="input" type="text" name="name" maxlength="64" />
+                </label>
+                <label class="check"><input type="checkbox" name="makeActive" value="true" /> Make this the active world</label>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="() => _showImport = false">Cancel</button>
+                <button type="submit" class="btn btn-primary"><Icon Name="upload" /> Upload &amp; import</button>
+            </div>
+        </form>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private static readonly (string Value, string Label)[] WorldTypes =
+    [
+        ("minecraft:normal", "Default"),
+        ("minecraft:large_biomes", "Large Biomes"),
+        ("minecraft:amplified", "Amplified"),
+        ("minecraft:flat", "Superflat"),
+        ("minecraft:single_biome_surface", "Single Biome"),
+    ];
+
+    private static readonly (string Label, string Json)[] FlatPresets =
+    [
+        ("Classic Flat", """{"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:dirt","height":2},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}"""),
+        ("Redstone Ready", """{"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:stone","height":3},{"block":"minecraft:sandstone","height":116}],"biome":"minecraft:desert"}"""),
+        ("The Void", """{"layers":[{"block":"minecraft:air","height":1}],"biome":"minecraft:the_void"}"""),
+    ];
+
+    [SupplyParameterFromQuery(Name = "imported")]
+    private string? Imported { get; set; }
+
+    [SupplyParameterFromQuery(Name = "importError")]
+    private string? ImportError { get; set; }
+
+    private ConfirmDialog _confirm = default!;
+    private List<WorldInfo> _worlds = [];
+    private string _activeWorld = "world";
+    private NewWorldOptions _new = new();
+    private string? _createError;
+    private bool _showCreate;
+    private bool _showImport;
+    private bool _busy;
+
+    private bool CanCreate => WorldFolders.ValidateName(_new.Name.Trim()) is null && !Worlds.WorldExists(_new.Name.Trim());
+
+    protected override void OnInitialized()
+    {
+        Load();
+        Server.StateChanged += OnChanged;
+        Backups.Changed += OnChanged;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || (Imported is null && ImportError is null)) return;
+        if (Imported is not null) Toasts.Success($"World '{Imported}' imported.");
+        if (ImportError is not null) Toasts.Error($"Import failed: {ImportError}");
+        Navigation.NavigateTo("worlds", replace: true);
+    }
+
+    private void Load()
+    {
+        _worlds = Worlds.ListWorlds().ToList();
+        _activeWorld = Worlds.ActiveWorld;
+    }
+
+    private void OpenCreate()
+    {
+        var props = Properties.Load();
+        _new = new NewWorldOptions
+        {
+            Difficulty = props.Get("difficulty") ?? "easy",
+            GameMode = props.Get("gamemode") ?? "survival",
+        };
+        _createError = null;
+        _showCreate = true;
+    }
+
+    private void RandomSeed() => _new.Seed = Random.Shared.NextInt64(long.MinValue, long.MaxValue).ToString();
+
+    private async Task CreateAsync()
+    {
+        if (!CanCreate) return;
+        _busy = true;
+        _createError = null;
+        try
+        {
+            await Worlds.CreateWorldAsync(_new);
+            _showCreate = false;
+            Toasts.Success(_new.StartServer
+                ? $"World '{_new.Name.Trim()}' is being generated. Watch progress in the console."
+                : $"World '{_new.Name.Trim()}' will be generated the next time the server starts.");
+        }
+        catch (Exception ex)
+        {
+            _createError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            Load();
+        }
+    }
+
+    private async Task SetActiveAsync(WorldInfo world)
+    {
+        var restart = false;
+        if (Server.IsRunning)
+        {
+            var result = await _confirm.ShowAsync(new ConfirmDialog.Options(
+                $"Switch to '{world.Name}'?",
+                "The server is running. It needs to restart to load a different world.",
+                "Switch world",
+                CheckboxLabel: "Restart the server now",
+                CheckboxDefault: true));
+            if (!result.Confirmed) return;
+            restart = result.Checked;
+        }
+
+        await RunAsync(async () =>
+        {
+            await Worlds.SetActiveWorldAsync(world.Name, restart);
+            Toasts.Success(Server.IsRunning && !restart
+                ? $"'{world.Name}' will load the next time the server restarts."
+                : $"'{world.Name}' is now the active world.");
+        });
+    }
+
+    private Task BackupAsync(WorldInfo world) => RunAsync(async () =>
+    {
+        var backup = await Backups.CreateAsync(world.Name, BackupKind.Manual);
+        Toasts.Success($"Backup of '{world.Name}' created ({Fmt.Bytes(backup.SizeBytes)}).");
+    });
+
+    private async Task DeleteAsync(WorldInfo world)
+    {
+        if (world.IsActive && Server.IsRunning)
+        {
+            Toasts.Warning("Stop the server before deleting the world it's running.");
+            return;
+        }
+
+        var result = await _confirm.ShowAsync(new ConfirmDialog.Options(
+            $"Delete '{world.Name}'?",
+            $"This permanently removes the world folder ({Fmt.Bytes(world.SizeBytes)}) from the server.",
+            "Delete world",
+            Danger: true,
+            CheckboxLabel: "Take a backup first",
+            CheckboxDefault: true,
+            RequireText: world.Name));
+        if (!result.Confirmed) return;
+
+        await RunAsync(async () =>
+        {
+            await Worlds.DeleteWorldAsync(world.Name, result.Checked);
+            Toasts.Success($"World '{world.Name}' deleted.");
+        });
+    }
+
+    private Task StartServerAsync() => RunAsync(async () =>
+    {
+        await Server.StartServerAsync();
+        Toasts.Info("Server starting. The world is generated during startup; see the console for progress.");
+    });
+
+    private async Task CopyAsync(string text)
+    {
+        if (await JS.InvokeAsync<bool>("mcm.copyText", text)) Toasts.Success("Seed copied to clipboard.");
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+            Load();
+        }
+    }
+
+    private void OnChanged() => InvokeAsync(() =>
+    {
+        if (!Backups.Progress.IsRunning) Load();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Server.StateChanged -= OnChanged;
+        Backups.Changed -= OnChanged;
+    }
+}
