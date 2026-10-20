@@ -1,0 +1,13 @@
+{
+  "name": "minecraft-server-manager-docs",
+  "private": true,
+  "type": "module",
+  "description": "Builds the Word user guide from the wiki Markdown in ../wiki",
+  "scripts": {
+    "build": "node build-user-guide.mjs"
+  },
+  "dependencies": {
+    "docx": "^9.13.0",
+    "marked": "^16.4.2"
+  }
+}
