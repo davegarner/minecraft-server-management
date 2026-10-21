@@ -21,7 +21,7 @@ flowchart LR
     Browser -- "HTTP: /login /setup /logout<br/>/api/backups /api/worlds/import" --> Endpoints
 
     subgraph Panel["MinecraftServerManager.exe"]
-        Pages["Razor pages<br/>Dashboard, Console, Properties,<br/>Worlds, Backups, Updates,<br/>Players, Settings"]
+        Pages["Razor pages<br/>(one per screen)"]
         Endpoints["Minimal API endpoints"]
         subgraph Services["Singleton services"]
             Process["ServerProcessService"]
