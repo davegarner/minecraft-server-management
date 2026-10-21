@@ -47,8 +47,48 @@ function Wait-For([scriptblock]$Condition, [int]$Seconds = 60) {
     return & $Condition
 }
 
+# In PowerShell 7.4+ -TimeoutSec only limits connecting, so also limit the wait for a response; a panel that
+# accepts a connection but never answers must fail a check, not hang the run.
+$web = @{ UseBasicParsing = $true; TimeoutSec = 10 }
+if ((Get-Command Invoke-WebRequest).Parameters.ContainsKey("OperationTimeoutSeconds")) { $web.OperationTimeoutSeconds = 30 }
+
 function Get-Panel([int]$Port, [string]$Path = "/login") {
-    try { Invoke-WebRequest -Uri "http://127.0.0.1:$Port$Path" -UseBasicParsing -TimeoutSec 5 } catch { $null }
+    try { Invoke-WebRequest -Uri "http://127.0.0.1:$Port$Path" @web } catch { $null }
+}
+
+# Prints what explains an installer failure: the installer log around the error, the service's state and the
+# recent Service Control Manager and application events.
+function Write-Diagnostics([string]$Log) {
+    Write-Host "  ---- diagnostics ----" -ForegroundColor Yellow
+    if ($Log -and (Test-Path $Log)) {
+        $lines = @(Get-Content $Log)
+        $failed = ($lines | Select-String -Pattern "Return value 3" | Select-Object -First 1).LineNumber
+        $from = if ($failed) { [Math]::Max(0, $failed - 30) } else { [Math]::Max(0, $lines.Count - 30) }
+        $lines[$from..([Math]::Min($lines.Count - 1, $from + 35))] | ForEach-Object { Write-Host "  | $_" }
+        $lines | Select-String -Pattern "Error 19\d\d|Error 1603|failed to (start|stop)|could not be stopped" |
+            Select-Object -First 15 | ForEach-Object { Write-Host "  ! $($_.Line)" }
+    }
+    Get-Process msiexec, MinecraftServerManager, java -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime | Out-String | Write-Host
+    Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" | Format-List Name, State, StartName, ProcessId | Out-String | Write-Host
+    $since = (Get-Date).AddMinutes(-15)
+    Get-WinEvent -FilterHashtable @{ LogName = "System"; ProviderName = "Service Control Manager"; StartTime = $since } -ErrorAction SilentlyContinue |
+        Where-Object Message -match "Minecraft" | Select-Object -First 20 |
+        ForEach-Object { Write-Host "  [SCM $($_.TimeCreated.ToString('HH:mm:ss'))] $($_.Message)" }
+    Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $since } -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProviderName -in "MinecraftServerManager", ".NET Runtime", "Application Error", "MsiInstaller" } |
+        Select-Object -First 30 |
+        ForEach-Object { Write-Host "  [$($_.ProviderName) $($_.TimeCreated.ToString('HH:mm:ss'))] $((($_.Message -split "`n") | Select-Object -First 6) -join ' | ')" }
+    Write-Host "  ---------------------" -ForegroundColor Yellow
+}
+
+# How long the panel takes to stop. Windows Installer only waits about 30 seconds for a service to stop.
+function Measure-ServiceStop {
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    Stop-Service $ServiceName -NoWait
+    try { (Get-Service $ServiceName).WaitForStatus("Stopped", [TimeSpan]::FromSeconds(120)) } catch { Write-Diagnostics }
+    $seconds = [Math]::Round($timer.Elapsed.TotalSeconds, 1)
+    Start-Service $ServiceName
+    $seconds
 }
 
 function Test-Rule([string]$Name) { [bool](Get-NetFirewallRule -DisplayName $Name -ErrorAction SilentlyContinue) }
@@ -57,14 +97,18 @@ function Get-ServiceStatus { (Get-Service $ServiceName -ErrorAction SilentlyCont
 # Runs an installer and returns its exit code. A run that hangs is stopped after $TimeoutMinutes and counted as a
 # failure, so the job still finishes and uploads the installer logs.
 function Invoke-Program([string]$File, [string[]]$Arguments, [int]$TimeoutMinutes = 10) {
+    $msiLog = [array]::IndexOf($Arguments, "/l*v")
+    $log = if ($msiLog -ge 0) { $Arguments[$msiLog + 1].Trim('"') } else { ($Arguments | Where-Object { $_ -like "/LOG=*" } | Select-Object -First 1) -replace '^/LOG=|"' }
     $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru
     $null = $process.Handle # keeps the exit code available after the process ends
-    if ($process.WaitForExit($TimeoutMinutes * 60 * 1000)) { return $process.ExitCode }
+    if ($process.WaitForExit($TimeoutMinutes * 60 * 1000)) {
+        if ($process.ExitCode -notin 0, 3010) { Write-Diagnostics $log }
+        return $process.ExitCode
+    }
 
     Write-Host "  [FAIL] $(Split-Path $File -Leaf) $($Arguments -join ' ') didn't finish within $TimeoutMinutes minutes" -ForegroundColor Red
     $script:failures++
-    Get-Process msiexec, MinecraftServerManager, java -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime | Out-String | Write-Host
-    Get-Service $ServiceName -ErrorAction SilentlyContinue | Format-List Name, Status, StartType | Out-String | Write-Host
+    Write-Diagnostics $log
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     return -1
 }
@@ -80,9 +124,9 @@ function Test-Private([string]$Path) {
 }
 
 function Complete-Setup([int]$Port, [string]$ServerDirectory) {
-    $form = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/setup" -UseBasicParsing -SessionVariable session
+    $form = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/setup" @web -SessionVariable session
     $token = [regex]::Match($form.Content, 'name="__RequestVerificationToken" value="([^"]+)"').Groups[1].Value
-    $null = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/setup" -Method Post -WebSession $session -UseBasicParsing -Body @{
+    $null = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/setup" -Method Post -WebSession $session @web -Body @{
         "_handler" = "setup"; "__RequestVerificationToken" = $token; "Input.Username" = "admin"
         "Input.Password" = "ci-only-password"; "Input.ConfirmPassword" = "ci-only-password"; "Input.ServerDirectory" = $ServerDirectory
     }
@@ -91,9 +135,9 @@ function Complete-Setup([int]$Port, [string]$ServerDirectory) {
 # Signing in needs the service to read settings.json and the sign-in keys, and to issue a cookie.
 function Test-SignIn([int]$Port) {
     try {
-        $form = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/login" -UseBasicParsing -SessionVariable session
+        $form = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/login" @web -SessionVariable session
         $token = [regex]::Match($form.Content, 'name="__RequestVerificationToken" value="([^"]+)"').Groups[1].Value
-        $page = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/login" -Method Post -WebSession $session -UseBasicParsing -Body @{
+        $page = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/login" -Method Post -WebSession $session @web -Body @{
             "_handler" = "login"; "__RequestVerificationToken" = $token; "Input.Username" = "admin"; "Input.Password" = "ci-only-password"
         }
         $page.Content -match "<title>Dashboard"
@@ -148,6 +192,9 @@ Complete-Setup 8080 "C:\MinecraftServerCI"
 Check (Test-Path (Join-Path $ConfigDir "data\settings.json")) "first-run setup completed"
 Check (Test-SignIn 8080) "can sign in with the new account"
 Check (Test-Private "C:\MinecraftServerCI") "server folder created at setup isn't writable by other users"
+$seconds = Measure-ServiceStop
+Check ($seconds -lt 30) "service stops within 30 seconds after sign-ins (took $seconds s)"
+Check ([bool](Wait-For { Get-Panel 8080 })) "panel answers again after the restart"
 
 # ------------------------------------------------------------------------------------------------
 Write-Host "Setup wizard: upgrade in place" -ForegroundColor Cyan
@@ -199,6 +246,9 @@ Check ((Test-Path $Shortcut) -and ((Get-Content $Shortcut -Raw) -match "localhos
 $installedMsi = $Msi
 if ($UpgradeMsi) {
     Write-Host "MSI: upgrade without options keeps the previous choices" -ForegroundColor Cyan
+    $seconds = Measure-ServiceStop
+    Check ($seconds -lt 30) "service stops within 30 seconds (took $seconds s)"
+    $null = Wait-For { Get-Panel 8090 }
     $code = Invoke-Program "msiexec.exe" @("/i", "`"$UpgradeMsi`"", "/qn", "/norestart", "/l*v", "`"$LogDirectory\msi-upgrade.log`"")
     Check ($code -eq 0) "msiexec upgrade exited with code 0 (got $code)"
     Check ((Get-ServiceStatus) -eq "Running") "service is running after the upgrade"
@@ -219,5 +269,5 @@ Check (-not (Test-Rule "Minecraft Server (TCP 25565)") -and -not (Test-Rule "Min
 Check (-not (Test-Path $Shortcut)) "Start menu shortcut removed"
 
 # ------------------------------------------------------------------------------------------------
-if ($script:failures) { throw "$($script:failures) installer check(s) failed. Logs: $LogDirectory" }
+if ($script:failures) { Write-Diagnostics; throw "$($script:failures) installer check(s) failed. Logs: $LogDirectory" }
 Write-Host "All installer checks passed." -ForegroundColor Green
