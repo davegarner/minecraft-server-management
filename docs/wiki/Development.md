@@ -97,6 +97,8 @@ The wiki is kept in the main repository under `docs/wiki/` and published to the 
 docs/publish-wiki.sh            # pushes docs/wiki to the repository's .wiki.git
 ```
 
+The repository is push-mirrored to GitHub. There, the `Publish wiki` workflow (`.github/workflows/publish-wiki.yml`) copies `docs/wiki` into the GitHub wiki whenever it changes on `main`. It pushes to `master` (the only branch GitHub wikis display) and rewrites links to the LAN Gitea server so they point at GitHub. It doesn't run on Gitea. Edits made directly in either wiki's web editor are overwritten by the next publish, so change `docs/wiki` instead.
+
 The Word user guide (`docs/Minecraft-Server-Manager-User-Guide.docx`) is generated from the same Markdown pages:
 
 ```bash

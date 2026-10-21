@@ -24,4 +24,8 @@
    docs/publish-wiki.sh "Describe the change"
    ```
 
+4. Commit and push. When the Gitea push mirror syncs the commit to GitHub, the `Publish wiki` workflow (`.github/workflows/publish-wiki.yml`) updates the [GitHub wiki](https://github.com/davegarner/minecraft-server-management/wiki) automatically, rewriting Gitea-only links to GitHub ones.
+
+Make changes here rather than in either wiki's web editor; the next publish overwrites edits made there.
+
 The server properties reference (`wiki/Server-Properties-Reference.md`) mirrors `src/MinecraftServerManager/Services/PropertySchema.cs`. Update it when the schema changes.
