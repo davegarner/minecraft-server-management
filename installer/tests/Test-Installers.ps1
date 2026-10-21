@@ -113,6 +113,14 @@ function Invoke-Program([string]$File, [string[]]$Arguments, [int]$TimeoutMinute
     return -1
 }
 function Test-RecoveryActions { [bool]((& sc.exe qfailure $ServiceName) -match "RESTART") }
+
+# The setup wizard's uninstaller finishes in a copy of itself (_iu*.tmp) that outlives unins000.exe. Until it is done
+# it is still deleting files, so installing again into the same folder straight away loses files to it.
+function Wait-UninstallFinished {
+    [bool](Wait-For {
+        -not (Get-Process | Where-Object ProcessName -like "_iu*") -and -not (Test-Path (Join-Path $InstallDir "unins000.dat"))
+    } 180)
+}
 function Get-ServiceAccount { (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").StartName }
 
 # Only SYSTEM, Administrators and the service's account have access, and nothing is inherited from the parent.
@@ -163,7 +171,7 @@ if ($PreviousSetupExe) {
 
     # Back to a clean machine for the checks below.
     $null = Invoke-Program (Join-Path $InstallDir "unins000.exe") @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
-    $null = Wait-For { -not (Get-Service $ServiceName -ErrorAction SilentlyContinue) }
+    Check (Wait-UninstallFinished) "previous release fully uninstalled"
     Remove-Item $ConfigDir, "C:\MinecraftServerPrevious" -Recurse -Force -ErrorAction SilentlyContinue
 }
 
@@ -221,6 +229,7 @@ Check ([bool](Wait-For { Get-Panel 8080 })) "panel back on port 8080"
 Write-Host "Setup wizard: uninstall" -ForegroundColor Cyan
 $code = Invoke-Program (Join-Path $InstallDir "unins000.exe") @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=`"$LogDirectory\setup-uninstall.log`"")
 Check ($code -eq 0) "uninstaller exited with code 0 (got $code)"
+Check (Wait-UninstallFinished) "uninstaller finished (nothing left running before the MSI installs into the same folder)"
 Check ([bool](Wait-For { -not (Get-Service $ServiceName -ErrorAction SilentlyContinue) })) "service removed"
 Check ([bool](Wait-For { -not (Test-Path (Join-Path $InstallDir "MinecraftServerManager.exe")) })) "program files removed"
 Check (-not (Test-Rule "Minecraft Server (TCP 25565)")) "firewall rule removed"
