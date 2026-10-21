@@ -157,7 +157,7 @@
             <a class="btn btn-ghost btn-sm" href="console">Open console</a>
         </header>
         <div class="console console-mini">
-            @foreach (var line in Server.GetConsoleSnapshot().TakeLast(12))
+            @foreach (var line in Server.GetConsoleLines(maxCount: 12))
             {
                 <div class="cl @ConsoleStyles.ClassFor(line)" @key="line.Id">@line.Text</div>
             }
@@ -220,7 +220,7 @@
         _address = $"{(string.IsNullOrWhiteSpace(ip) ? "*" : ip)}:{props.Get("server-port") ?? "25565"}";
         _gameMode = Capitalize(props.Get("gamemode") ?? "survival");
         _difficulty = Capitalize(props.Get("difficulty") ?? "easy");
-        _activeWorldInfo = Worlds.ListWorlds().FirstOrDefault(w => w.IsActive);
+        _activeWorldInfo = Worlds.GetWorld(_activeWorld);
         _lastBackup = Backups.List().FirstOrDefault();
     }
 
@@ -262,13 +262,14 @@
         StateHasChanged();
     });
 
-    private DateTimeOffset _lastConsoleRender;
+    private long _lastConsoleRender;
 
     private void OnLine(ConsoleLine _)
     {
         // Console output can be very chatty; refresh the preview at most twice a second.
-        if (DateTimeOffset.Now - _lastConsoleRender < TimeSpan.FromMilliseconds(500)) return;
-        _lastConsoleRender = DateTimeOffset.Now;
+        var now = Environment.TickCount64;
+        if (now - _lastConsoleRender < 500) return;
+        _lastConsoleRender = now;
         InvokeAsync(StateHasChanged);
     }
 

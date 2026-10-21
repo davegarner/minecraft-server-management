@@ -536,6 +536,8 @@ td.row-actions { display: table-cell; text-align: right; }
     font-family: var(--mono);
     font-size: 12.5px;
     line-height: 1.55;
+    /* Fixed height, so lines streaming in never need layout or paint outside the box. */
+    contain: strict;
 }
 .console-mini { height: 230px; font-size: 12px; }
 .console-empty { color: #7d8790; font-style: italic; }

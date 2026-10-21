@@ -18,21 +18,20 @@
     <div class="console-toolbar">
         <div class="search-box">
             <Icon Name="search" Size="16" />
-            <input class="input" placeholder="Filter output…" @bind="_filter" @bind:event="oninput" aria-label="Filter console output" />
+            <input class="input" placeholder="Filter output…" @bind="_filter" @bind:event="oninput" @bind:after="RebuildRows" aria-label="Filter console output" />
         </div>
         <label class="check"><input type="checkbox" @bind="_autoScroll" /> Auto-scroll</label>
         <button class="btn btn-ghost btn-sm" @onclick="ClearView">Clear view</button>
     </div>
 
     <div class="console" @ref="_consoleElement" role="log" aria-live="off">
-        @{ var lines = VisibleLines(); }
-        @if (lines.Count == 0)
+        @if (_rows.Count == 0)
         {
             <div class="console-empty">@(Server.IsRunning ? "Waiting for output…" : "No output yet. Start the server to see its console here.")</div>
         }
-        @foreach (var line in lines)
+        @foreach (var row in _rows)
         {
-            <div class="cl @ConsoleStyles.ClassFor(line)" @key="line.Id">@line.Text</div>
+            <div class="cl @row.Css" @key="row.Line.Id">@row.Line.Text</div>
         }
     </div>
 
@@ -69,6 +68,10 @@
         ("Reload whitelist", "whitelist reload"),
     ];
 
+    private readonly record struct ConsoleRow(ConsoleLine Line, string Css);
+
+    // The rendered lines, kept incrementally so a render costs O(new lines) rather than O(console buffer).
+    private readonly Queue<ConsoleRow> _rows = new();
     private ElementReference _consoleElement;
     private ElementReference _inputForm;
     private DotNetObjectReference<ConsolePage>? _selfReference;
@@ -77,27 +80,44 @@
     private bool _autoScroll = true;
     private string _filter = "";
     private long _clearedThroughId;
+    private long _lastSeenId;
     private long _lastScrolledId;
 
     protected override void OnInitialized()
     {
         Server.LineReceived += OnLine;
         Server.StateChanged += OnStateChanged;
+        RebuildRows();
         // Batch re-renders so a burst of output (e.g. world generation) doesn't flood the connection.
         _renderTimer = new Timer(_ =>
         {
             if (!_dirty) return;
             _dirty = false;
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(() =>
+            {
+                AppendNewLines();
+                StateHasChanged();
+            });
         }, null, 200, 200);
     }
 
-    private List<ConsoleLine> VisibleLines()
+    private void RebuildRows()
     {
-        IEnumerable<ConsoleLine> lines = Server.GetConsoleSnapshot().Where(l => l.Id > _clearedThroughId);
-        if (!string.IsNullOrWhiteSpace(_filter))
-            lines = lines.Where(l => l.Text.Contains(_filter, StringComparison.OrdinalIgnoreCase));
-        return lines.TakeLast(MaxRenderedLines).ToList();
+        _rows.Clear();
+        _lastSeenId = _clearedThroughId;
+        AppendNewLines();
+    }
+
+    private void AppendNewLines()
+    {
+        var filtered = !string.IsNullOrWhiteSpace(_filter);
+        foreach (var line in Server.GetConsoleLines(afterId: _lastSeenId))
+        {
+            _lastSeenId = line.Id;
+            if (filtered && !line.Text.Contains(_filter, StringComparison.OrdinalIgnoreCase)) continue;
+            _rows.Enqueue(new ConsoleRow(line, ConsoleStyles.ClassFor(line)));
+        }
+        while (_rows.Count > MaxRenderedLines) _rows.Dequeue();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -110,9 +130,8 @@
                 await JS.InvokeVoidAsync("mcm.attachConsoleInput", _inputForm, _selfReference);
             }
 
-            var lastId = Server.GetConsoleSnapshot().LastOrDefault()?.Id ?? 0;
-            if (!_autoScroll || (!firstRender && lastId == _lastScrolledId)) return;
-            _lastScrolledId = lastId;
+            if (!_autoScroll || (!firstRender && _lastSeenId == _lastScrolledId)) return;
+            _lastScrolledId = _lastSeenId;
             await JS.InvokeVoidAsync("mcm.scrollToBottom", _consoleElement);
         }
         catch (JSDisconnectedException) { }
@@ -139,7 +158,11 @@
         catch (Exception ex) { Toasts.Error(ex.Message); }
     }
 
-    private void ClearView() => _clearedThroughId = Server.GetConsoleSnapshot().LastOrDefault()?.Id ?? 0;
+    private void ClearView()
+    {
+        _clearedThroughId = Server.LastLineId;
+        RebuildRows();
+    }
 
     private void OnLine(ConsoleLine _) => _dirty = true;
 

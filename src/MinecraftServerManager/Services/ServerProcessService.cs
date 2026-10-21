@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
@@ -31,8 +30,9 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly SemaphoreSlim _stdin = new(1, 1);
     private readonly Lock _consoleLock = new();
-    private readonly Queue<ConsoleLine> _console = new();
-    private readonly ConcurrentDictionary<string, byte> _players = new(StringComparer.OrdinalIgnoreCase);
+    // Ring buffer: the line with id N lives at index N % MaxConsoleLines, so readers can copy just the lines they need.
+    private readonly ConsoleLine[] _console = new ConsoleLine[MaxConsoleLines];
+    private readonly HashSet<string> _players = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<DateTimeOffset> _recentCrashes = [];
     private readonly Timer _statsTimer;
 
@@ -40,7 +40,8 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
     private Task _exitMonitor = Task.CompletedTask;
     private IDisposable? _job;
     private volatile bool _stopRequested;
-    private long _nextLineId;
+    private volatile IReadOnlyList<string> _onlinePlayers = [];
+    private long _lastLineId;
     private TimeSpan _lastCpuTime;
     private DateTimeOffset _lastCpuSample;
 
@@ -64,16 +65,31 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
 
     public TimeSpan? Uptime => StartedAt is { } started ? DateTimeOffset.Now - started : null;
 
-    public IReadOnlyList<string> OnlinePlayers => _players.Keys.Order(StringComparer.OrdinalIgnoreCase).ToList();
+    /// <summary>Sorted snapshot, rebuilt only when players join or leave (pages read it on every render).</summary>
+    public IReadOnlyList<string> OnlinePlayers => _onlinePlayers;
+
+    /// <summary>Id of the newest console line, or 0 if there is none. Ids increase by one per line.</summary>
+    public long LastLineId => Volatile.Read(ref _lastLineId);
 
     public event Action? StateChanged;
     public event Action? PlayersChanged;
     public event Action? StatsUpdated;
     public event Action<ConsoleLine>? LineReceived;
 
-    public IReadOnlyList<ConsoleLine> GetConsoleSnapshot()
+    /// <summary>
+    /// Returns the newest buffered lines with an id greater than <paramref name="afterId"/>, oldest first and at most
+    /// <paramref name="maxCount"/> of them. Only the returned lines are copied, so polling for new output stays cheap.
+    /// </summary>
+    public IReadOnlyList<ConsoleLine> GetConsoleLines(long afterId = 0, int maxCount = MaxConsoleLines)
     {
-        lock (_consoleLock) return _console.ToArray();
+        lock (_consoleLock)
+        {
+            var first = Math.Max(Math.Max(afterId, _lastLineId - MaxConsoleLines) + 1, _lastLineId - maxCount + 1);
+            if (first > _lastLineId) return [];
+            var lines = new ConsoleLine[_lastLineId - first + 1];
+            for (var i = 0; i < lines.Length; i++) lines[i] = _console[(int)((first + i) % MaxConsoleLines)];
+            return lines;
+        }
     }
 
     public async Task StartServerAsync(CancellationToken cancellationToken = default)
@@ -212,7 +228,11 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
         if (OperatingSystem.IsWindows()) _job = WindowsJobObject.TryAttach(process, _logger);
 
         _stopRequested = false;
-        _players.Clear();
+        lock (_players)
+        {
+            _players.Clear();
+            _onlinePlayers = [];
+        }
         _process = process;
         ProcessId = process.Id;
         StartedAt = DateTimeOffset.Now;
@@ -293,11 +313,7 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
         CpuPercent = 0;
         MemoryBytes = 0;
         LastExitCode = exitCode;
-        if (!_players.IsEmpty)
-        {
-            _players.Clear();
-            EventHelper.Raise(PlayersChanged, _logger);
-        }
+        if (_onlinePlayers.Count > 0) UpdatePlayers(players => players.Clear());
 
         AddManagerLine(crashed
             ? $"Server process exited unexpectedly (exit code {exitCode})."
@@ -364,22 +380,35 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
 
         if (JoinRegex().Match(text) is { Success: true } join)
         {
-            _players[join.Groups["name"].Value] = 0;
-            EventHelper.Raise(PlayersChanged, _logger);
+            var name = join.Groups["name"].Value;
+            UpdatePlayers(players => players.Add(name));
         }
         else if (LeaveRegex().Match(text) is { Success: true } leave)
         {
-            _players.TryRemove(leave.Groups["name"].Value, out _);
-            EventHelper.Raise(PlayersChanged, _logger);
+            var name = leave.Groups["name"].Value;
+            UpdatePlayers(players => players.Remove(name));
         }
         else if (ListRegex().Match(text) is { Success: true } list)
         {
             // Output of the "list" command: resynchronise with the authoritative player list.
-            _players.Clear();
-            foreach (var name in list.Groups["names"].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                if (PlayerService.IsValidName(name)) _players[name] = 0;
-            EventHelper.Raise(PlayersChanged, _logger);
+            var names = list.Groups["names"].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            UpdatePlayers(players =>
+            {
+                players.Clear();
+                foreach (var name in names)
+                    if (PlayerService.IsValidName(name)) players.Add(name);
+            });
         }
+    }
+
+    private void UpdatePlayers(Action<HashSet<string>> change)
+    {
+        lock (_players)
+        {
+            change(_players);
+            _onlinePlayers = _players.Order(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+        EventHelper.Raise(PlayersChanged, _logger);
     }
 
     private ConsoleLine AddLine(string text, ConsoleLineKind kind)
@@ -387,9 +416,9 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
         ConsoleLine line;
         lock (_consoleLock)
         {
-            line = new ConsoleLine(++_nextLineId, text, kind);
-            _console.Enqueue(line);
-            while (_console.Count > MaxConsoleLines) _console.Dequeue();
+            line = new ConsoleLine(_lastLineId + 1, text, kind);
+            _console[(int)(line.Id % MaxConsoleLines)] = line;
+            Volatile.Write(ref _lastLineId, line.Id);
         }
         EventHelper.Raise(LineReceived, line, _logger);
         return line;

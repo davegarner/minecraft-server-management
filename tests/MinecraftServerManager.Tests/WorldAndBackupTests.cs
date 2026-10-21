@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using MinecraftServerManager.Services;
+using MinecraftServerManager.Util;
 
 namespace MinecraftServerManager.Tests;
 
@@ -28,6 +29,51 @@ public class WorldAndBackupTests : IDisposable
         Assert.Equal("Creative", world.Level?.GameModeName);
         Assert.True(world.Level?.Hardcore);
         Assert.True(world.SizeBytes > worlds[1].SizeBytes); // includes world_nether
+    }
+
+    [Fact]
+    public void GetWorld_DescribesOneWorldOrNullIfNotGenerated()
+    {
+        _dir.CreateWorld("world", seed: 7);
+        _dir.CreateWorld("other", seed: 8);
+
+        var world = _dir.Worlds.GetWorld("world");
+        Assert.NotNull(world);
+        Assert.Equal(_dir.Worlds.ListWorlds().Single(w => w.Name == "world"), world);
+        Assert.False(_dir.Worlds.GetWorld("other")?.IsActive);
+        Assert.Null(_dir.Worlds.GetWorld("not-generated"));
+    }
+
+    [Fact]
+    public void DeleteDirectory_RemovesReadOnlyFiles()
+    {
+        var path = _dir.CreateWorld("readonly", seed: 1);
+        var region = Path.Combine(path, "region", "r.0.0.mca");
+        File.SetAttributes(region, File.GetAttributes(region) | FileAttributes.ReadOnly);
+
+        FileUtil.DeleteDirectory(path);
+
+        Assert.False(Directory.Exists(path));
+    }
+
+    [Fact]
+    public void ConsoleBuffer_ReturnsOnlyRequestedLinesAcrossWrapAround()
+    {
+        var server = _dir.Server;
+        Assert.Empty(server.GetConsoleLines());
+        for (var i = 1; i <= 3500; i++) server.AddManagerLine($"line {i}");
+
+        Assert.Equal(3500, server.LastLineId);
+        var all = server.GetConsoleLines();
+        Assert.Equal(3000, all.Count); // the oldest 500 have been dropped
+        Assert.Equal(Enumerable.Range(501, 3000).Select(i => (long)i), all.Select(l => l.Id));
+        Assert.EndsWith("line 501", all[0].Text);
+
+        Assert.Equal([3499L, 3500L], server.GetConsoleLines(afterId: 3498).Select(l => l.Id));
+        Assert.Equal([3498L, 3499L, 3500L], server.GetConsoleLines(maxCount: 3).Select(l => l.Id));
+        Assert.Equal(3000, server.GetConsoleLines(afterId: 10).Count); // ids no longer buffered are skipped
+        Assert.Empty(server.GetConsoleLines(afterId: 3500));
+        Assert.Empty(server.GetConsoleLines(maxCount: 0));
     }
 
     [Fact]

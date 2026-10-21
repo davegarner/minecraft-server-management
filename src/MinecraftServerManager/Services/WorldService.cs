@@ -51,20 +51,34 @@ public sealed class WorldService(
         foreach (var name in names)
         {
             if (WorldFolders.IsDimensionFolder(name, names)) continue;
-            var path = Path.Combine(serverDirectory, name);
-            var levelDat = Path.Combine(path, "level.dat");
-            worlds.Add(new WorldInfo(
-                name,
-                path,
-                WorldFolders.GetExistingFolders(serverDirectory, name).Sum(GetCachedSize),
-                File.GetLastWriteTime(levelDat),
-                string.Equals(name, active, StringComparison.OrdinalIgnoreCase),
-                LevelInfo.TryRead(levelDat)));
+            worlds.Add(Describe(serverDirectory, name, active));
         }
         return worlds
             .OrderByDescending(w => w.IsActive)
             .ThenBy(w => w.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>Describes one world without scanning the others, or returns null if it hasn't been generated yet.</summary>
+    public WorldInfo? GetWorld(string name)
+    {
+        var serverDirectory = settings.Current.ServerDirectory;
+        return WorldFolders.IsWorldDirectory(Path.Combine(serverDirectory, name))
+            ? Describe(serverDirectory, name, properties.LevelName)
+            : null;
+    }
+
+    private WorldInfo Describe(string serverDirectory, string name, string activeWorld)
+    {
+        var path = Path.Combine(serverDirectory, name);
+        var levelDat = Path.Combine(path, "level.dat");
+        return new WorldInfo(
+            name,
+            path,
+            WorldFolders.GetExistingFolders(serverDirectory, name).Sum(GetCachedSize),
+            File.GetLastWriteTime(levelDat),
+            string.Equals(name, activeWorld, StringComparison.OrdinalIgnoreCase),
+            LevelInfo.TryRead(levelDat));
     }
 
     public bool WorldExists(string name) =>

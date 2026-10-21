@@ -19,11 +19,12 @@ public static class FileUtil
     public static void DeleteDirectory(string path)
     {
         if (!Directory.Exists(path)) return;
-        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+        // Attributes come from the directory listing, avoiding a file-system call per file for large worlds.
+        var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = 0 };
+        foreach (var file in new DirectoryInfo(path).EnumerateFiles("*", options))
         {
-            var attributes = File.GetAttributes(file);
-            if (attributes.HasFlag(FileAttributes.ReadOnly))
-                File.SetAttributes(file, attributes & ~FileAttributes.ReadOnly);
+            if (file.Attributes.HasFlag(FileAttributes.ReadOnly))
+                file.Attributes &= ~FileAttributes.ReadOnly;
         }
         Directory.Delete(path, recursive: true);
     }
