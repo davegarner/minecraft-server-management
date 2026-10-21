@@ -32,4 +32,5 @@
 - [Release Notes](Release-Notes)
 
 **Download**
+- [Latest release](https://gitea.uk.local:3001/Apps/minecraft-server-management/releases)
 - [User Guide (Word)](raw/Minecraft-Server-Manager-User-Guide.docx)

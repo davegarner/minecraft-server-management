@@ -2,15 +2,24 @@
 
 Start with the **[Console](Console)**: most problems are explained there, either by Minecraft or by a blue `[Manager]` message. For the panel itself, check **Event Viewer → Windows Logs → Application** (source *MinecraftServerManager*).
 
+## Installing
+
+| Symptom | Fix |
+| --- | --- |
+| *Windows protected your PC* (SmartScreen) | The installers aren't code-signed yet. Check the file's SHA-256 (`Get-FileHash <file>`) against `SHA256SUMS.txt` from the release, then click **More info → Run anyway**. |
+| *Setting up the Windows service failed (exit code N)* | The files were installed but the service didn't start. Usually the panel's port is taken: see *Port already in use?* below, then run `.\install-service.ps1 -PanelPort <port>` from `C:\Program Files\Minecraft Server Manager` in an administrator PowerShell window. Check Event Viewer for the panel's own error. |
+| *Saving the panel settings failed* | `C:\ProgramData\Minecraft Server Manager\appsettings.json` couldn't be written; it may contain invalid JSON. Fix or delete it and run the installer again. |
+| Need a log | Setup wizard: run it with `/LOG="setup.log"`. MSI: `msiexec /i <file>.msi /l*v install.log`. |
+
 ## The panel won't open in the browser
 
 | Check | How |
 | --- | --- |
 | Is the service running? | `Get-Service MinecraftServerManager`. Start it with `Start-Service MinecraftServerManager`. |
-| Right address? | The address is set by `Urls` in `appsettings.json` (default `http://localhost:8080`, which only works **on the server itself**). |
-| Port already in use? | If the service stops straight away, check Event Viewer for "address already in use". Change the port in `Urls`. |
-| Remote access blocked? | See [Remote Access and HTTPS](Remote-Access-and-HTTPS): listen on `0.0.0.0` **and** open the firewall. |
-| Run it interactively | Stop the service and double-click `MinecraftServerManager.exe` to see start-up messages and errors in the console window. |
+| Right address? | Use the Start menu shortcut, or check `Urls` in `C:\ProgramData\Minecraft Server Manager\appsettings.json` (default `http://localhost:8080`, which only works **on the server itself**). |
+| Port already in use? | If the service stops straight away, check Event Viewer for "address already in use" (or run `netstat -ano \| findstr :8080`). Move the panel with [`configure --port 9090`](Configuration-Reference#the-configure-command) and restart the service. |
+| Remote access blocked? | See [Remote Access and HTTPS](Remote-Access-and-HTTPS): listen on `0.0.0.0` (`configure --remote-access`) **and** open the firewall. |
+| Run it interactively | Stop the service and run `MinecraftServerManager.exe` from an administrator PowerShell window to see start-up messages and errors. |
 
 ## "Rejoining the server…" keeps appearing
 
@@ -34,7 +43,7 @@ The panel shows **Running** when Minecraft logs `Done (…)! For help, type "hel
 
 ## Players can't connect
 
-1. **Firewall:** TCP **25565** (or your `server-port`) must be allowed inbound: `.\install-service.ps1 -OpenMinecraftPort`, or see [Installation](Installation#open-the-firewall-for-players).
+1. **Firewall:** TCP **25565** (or your `server-port`) must be allowed inbound. The installers add this rule unless you unticked it; see [Installation](Installation#open-the-firewall-for-players).
 2. **Router:** players outside your network need TCP 25565 forwarded to the server.
 3. **Port conflict:** the console shows `**** FAILED TO BIND TO PORT!` if something else uses the port. Change `server-port` or stop the other program.
 4. **Whitelist:** if `white-list` is on, add the player on [Players](Players).

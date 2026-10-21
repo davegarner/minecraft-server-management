@@ -9,16 +9,17 @@ The panel can start programs, run server commands and replace files, so treat ac
 3. **Complete setup immediately after installing**. Until then, whoever reaches the setup page first creates the admin account.
 4. **Don't enable RCON** unless another tool needs it, and never expose port 25575 to the internet. The panel doesn't need RCON.
 5. **Consider a dedicated service account** rather than Local System ([how](Running-as-a-Windows-Service#service-account)).
-6. **Restrict the folders**: only administrators and the service account need access to the panel folder (it holds `appsettings.json` and `data\`).
-7. **Keep backups off the server** as well as on it.
-8. **Keep Windows, Java and Minecraft updated.**
+6. **Restrict the folders**: only administrators and the service account need access to `C:\ProgramData\Minecraft Server Manager` (it holds `appsettings.json` and `data\`; with the zip, the panel folder). Ordinary users can read `C:\ProgramData` by default, so remove *Users* from this folder's permissions if others sign in to the server.
+7. **Verify downloads** against `SHA256SUMS.txt` from the release before running an installer.
+8. **Keep backups off the server** as well as on it.
+9. **Keep Windows, Java, Minecraft and the panel updated.**
 
 ## Authentication
 
 | Aspect | Behaviour |
 | --- | --- |
 | Accounts | One administrator, created during first-run setup. |
-| Password storage | PBKDF2 with SHA-256, 210,000 iterations and a random 16-byte salt per password. Only the hash is stored, in `data\settings.json`. |
+| Password storage | PBKDF2 with SHA-256, 210,000 iterations and a random 16-byte salt per password. Only the hash is stored, in `data\settings.json` ([where](Files-and-Folders#panel-data-folder)). |
 | Brute-force protection | After 5 failed sign-ins from one IP address, sign-in from that address is refused for 5 minutes. |
 | Session cookie | `mcm.auth`: HttpOnly, SameSite=Strict, encrypted and signed. Lasts for the browser session, or 14 days (renewed with use) with *Keep me signed in*. |
 | Password change | Changing the password or username invalidates every existing session immediately. |
@@ -27,7 +28,7 @@ The panel can start programs, run server commands and replace files, so treat ac
 ### Resetting a forgotten password
 
 1. Stop the panel (`Stop-Service MinecraftServerManager`).
-2. Open `data\settings.json` and set `"AdminPasswordHash": ""`.
+2. Open `C:\ProgramData\Minecraft Server Manager\data\settings.json` in Notepad as administrator (with the zip, `data\settings.json` next to the executable) and set `"AdminPasswordHash": ""`.
 3. Start the panel and open it **from the server itself**. You'll get the setup page again; your worlds and settings are kept.
 
 ## Protection built into the panel

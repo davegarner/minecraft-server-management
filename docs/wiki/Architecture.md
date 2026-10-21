@@ -145,6 +145,7 @@ Progress is published as an immutable `UpdateProgress` record, which is also how
 
 - **Content root:** when `appsettings.json` and `wwwroot` sit next to the executable (a published build), the content root is `AppContext.BaseDirectory`. This matters for a Windows service, whose working directory is `System32`.
 - `AddWindowsService` is a no-op when not running as a service, so the same executable works interactively.
+- **Machine configuration:** `C:\ProgramData\Minecraft Server Manager\appsettings.json` is added after the content-root `appsettings.json`, so installer-written settings survive upgrades. `MinecraftServerManager.exe configure …` (`Hosting/MachineConfiguration.cs`) writes it and exits before the web host is built.
 - Static assets are served by `MapStaticAssets` with fingerprinted URLs and pre-compressed variants.
 
 ## Source layout
@@ -156,6 +157,7 @@ src/MinecraftServerManager/
                                    PropertySchema, LevelInfo/NbtReader, WorldFolders,
                                    WindowsJobObject, ManagerSettings
   Endpoints/ManagerEndpoints.cs    /logout, /api/backups/{file}, /api/worlds/import
+  Hosting/MachineConfiguration.cs  The configure command used by the installers
   Components/
     App.razor, Routes.razor        Root and router (render-mode selection, auth routing)
     Layout/                        MainLayout (sidebar/top bar), AuthLayout, ReconnectModal

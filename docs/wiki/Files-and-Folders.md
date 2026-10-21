@@ -1,23 +1,44 @@
 # Files and Folders
 
-Where the panel and the Minecraft server keep everything, assuming the defaults (`C:\MinecraftManager` for the panel and `C:\MinecraftServer` for Minecraft).
+Where the panel and the Minecraft server keep everything, assuming the defaults (`C:\MinecraftServer` for Minecraft).
 
-## Panel folder
+## Panel program folder
+
+Installed by the setup wizard or MSI. Everything here is replaced when you upgrade, so don't keep your own files in it.
 
 ```text
-C:\MinecraftManager\
+C:\Program Files\Minecraft Server Manager\
 ├── MinecraftServerManager.exe          The panel (self-contained; includes the .NET runtime)
-├── appsettings.json                    Start-up configuration (see Configuration Reference)
+├── appsettings.json                    Default settings (don't edit; see below)
 ├── MinecraftServerManager.staticwebassets.endpoints.json
 ├── wwwroot\                            Web assets (styles, scripts, icons)
 ├── install-service.ps1 / uninstall-service.ps1
-├── web.config                          Only used when hosted under IIS
-└── data\                               Panel data (created on first run)
+└── web.config                          Only used when hosted under IIS
+```
+
+## Panel data folder
+
+Created by the installer and on first run. Kept when you upgrade or uninstall (the setup wizard asks whether to delete it when uninstalling).
+
+```text
+C:\ProgramData\Minecraft Server Manager\
+├── appsettings.json                    Your start-up settings: address, port, HTTPS (see Configuration Reference)
+└── data\
     ├── settings.json                   Panel settings and the admin password hash
     └── keys\                           Keys that protect sign-in cookies
 ```
 
-> **Back up the `data` folder** along with your worlds. If `keys\` is lost, everyone simply has to sign in again; if `settings.json` is lost, you'll go through setup again (your worlds are unaffected).
+`C:\ProgramData` is hidden by default; type the path into File Explorer's address bar to open it.
+
+> **Back up this folder** along with your worlds. If `keys\` is lost, everyone simply has to sign in again; if `settings.json` is lost, you'll go through setup again (your worlds are unaffected).
+
+## Zip installs
+
+With the zip, everything is in the folder you extracted it to (for example `C:\MinecraftManager`): edit the `appsettings.json` there, and the panel data is in `data\` next to the executable.
+
+## Windows registry
+
+The installers record their choices under `HKEY_LOCAL_MACHINE\Software\Minecraft Server Manager` (install folder, version, panel port, which firewall rules they added) so upgrades and uninstalls can reuse them. The key is removed on uninstall.
 
 ## Server directory
 

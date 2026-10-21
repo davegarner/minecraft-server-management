@@ -1,6 +1,8 @@
 # Minecraft Server Manager
 
-**Minecraft Server Manager** is a web control panel for running a **Minecraft: Java Edition** dedicated server on **Windows Server**. It installs as a single program, runs in the background as a Windows service, and is managed from any web browser.
+**Minecraft Server Manager** is a web control panel for running a **Minecraft: Java Edition** dedicated server on **Windows Server**. It installs with a setup wizard, runs in the background as a Windows service, and is managed from any web browser.
+
+**[Download the latest release](https://gitea.uk.local:3001/Apps/minecraft-server-management/releases)** (setup wizard, MSI or zip).
 
 ![The dashboard](images/dashboard.png)
 
@@ -27,7 +29,7 @@
 
 **Getting started**
 - [Quick Start](Quick-Start): from download to a running server in ten steps
-- [Installation](Installation): requirements, first-run setup, Java and firewall
+- [Installation](Installation): requirements, the setup wizard and MSI, first-run setup, Java and firewall
 
 **User guide**
 - [User Guide](User-Guide): signing in and finding your way around
@@ -53,5 +55,6 @@
 | **Runs on** | Windows Server 2016 or later, Windows 10/11 (x64) |
 | **Needs** | Java 21 or later (Java 25 for Minecraft 26.x), and internet access for downloads |
 | **Default address** | `http://localhost:8080` |
+| **Installs with** | Setup wizard (`.exe`), MSI, or portable zip |
 | **Built with** | ASP.NET Core Blazor on .NET 10, published as one self-contained `.exe` |
 | **Source** | [Apps/minecraft-server-management](https://gitea.uk.local:3001/Apps/minecraft-server-management) |

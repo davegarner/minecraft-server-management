@@ -57,8 +57,31 @@ The xUnit project `tests/MinecraftServerManager.Tests` covers:
 | `JavaPropertiesDocument` | Separators, escapes, `\uXXXX`, continuations, round-tripping with comments, Latin-1 fallback |
 | Helpers | Java version parsing, command-line splitting, launch arguments, world-name rules, offline UUIDs, password hashing, property validation, invariant CSS formatting |
 | Worlds and backups (integration, temp folders) | `level.dat` reading, dimension folders, world creation, backup contents, retention, restore and rollback, path-traversal rejection, world import, delete with backup, EULA |
+| `MachineConfiguration` | The `configure` command: defaults, port and remote-access changes, `--keep-existing`, keeping other keys, invalid arguments |
 
 ## Building a release
+
+### Installers (Windows)
+
+```powershell
+.\scripts\build-release.ps1           # version from MinecraftServerManager.csproj
+.\scripts\build-release.ps1 -Version 1.0.1
+```
+
+Needs Windows, the .NET 10 SDK and [Inno Setup 6.3+](https://jrsoftware.org/isdl.php). The WiX Toolset comes from NuGet. Output in `artifacts\release\`:
+
+| File | Built from |
+| --- | --- |
+| `MinecraftServerManager-<version>-Setup.exe` | `installer/inno/MinecraftServerManager.iss` (Inno Setup) |
+| `MinecraftServerManager-<version>-x64.msi` | `installer/wix/` (WiX v5 SDK project; `Package.wxs` plus a file list generated from the publish folder) |
+| `MinecraftServerManager-<version>-win-x64.zip` | The publish folder |
+| `SHA256SUMS.txt` | Checksums of the above |
+
+Both installers install to `Program Files`, register the service, add firewall rules, and run `MinecraftServerManager.exe configure` to write `C:\ProgramData\Minecraft Server Manager\appsettings.json` (`Hosting/MachineConfiguration.cs`). The setup wizard runs `install-service.ps1`; the MSI uses `ServiceInstall` and the WiX Firewall extension, and remembers its options in the registry for upgrades and uninstalls. Keep the setup wizard's `AppId` and the MSI's `UpgradeCode` unchanged, or upgrades will install side by side.
+
+`installer/tests/Test-Installers.ps1` installs, upgrades and uninstalls both packages on a disposable Windows machine and checks the service, firewall rules, settings and panel. **Don't run it on a machine you care about.**
+
+### Portable zip only (any OS)
 
 ```powershell
 .\scripts\publish.ps1                 # Windows
@@ -69,6 +92,18 @@ scripts/publish.sh                    # macOS / Linux, cross-compiles for Window
 ```
 
 Both produce `dist/MinecraftServerManager-win-x64/` and `dist/MinecraftServerManager-win-x64.zip`: a self-contained single-file `MinecraftServerManager.exe` (about 100 MB), `wwwroot`, `appsettings.json` and the service scripts. Pass another runtime identifier (e.g. `win-arm64`) as the argument to build for it.
+
+### Release workflow
+
+`.github/workflows/release.yml` runs on GitHub's Windows runners (it doesn't run on Gitea). On every push to `main` that touches the code or installers, it runs the tests, builds the release, builds a `99.0.0` MSI for the upgrade test, runs `Test-Installers.ps1`, and uploads the files as a workflow artifact.
+
+To publish a release:
+
+1. Set `<Version>` in `src/MinecraftServerManager/MinecraftServerManager.csproj` and add the changes to [Release Notes](Release-Notes).
+2. Commit, then tag and push: `git tag -a v1.0.1 -m "Version 1.0.1" && git push origin v1.0.1`.
+3. Sync the GitHub mirror (Gitea → *Settings → Repository → Mirror Settings → Synchronize Now*), or wait for the next scheduled sync.
+4. The workflow checks the tag matches the project version, runs the tests and installer checks, and publishes a GitHub release with the installers. The release text comes from `installer/RELEASE_NOTES.md`.
+5. On Gitea, create a release for the same tag and attach the same files.
 
 ## Conventions
 

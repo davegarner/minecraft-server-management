@@ -6,13 +6,15 @@ Out of the box the panel only accepts connections from the server itself (`http:
 
 ## Option 1: Listen on the network (LAN)
 
-1. Edit `appsettings.json` in the panel folder:
+If you ticked *Allow other computers to open the web panel* in the setup wizard, this is already done. Otherwise:
 
-   ```json
-   "Urls": "http://0.0.0.0:8080",
+1. From an **administrator** PowerShell window, tell the panel to listen on all network interfaces:
+
+   ```powershell
+   & "C:\Program Files\Minecraft Server Manager\MinecraftServerManager.exe" configure --remote-access
    ```
 
-   `0.0.0.0` means all network interfaces. Use a specific address (e.g. `http://192.168.1.20:8080`) to listen on one interface only.
+   This sets `"Urls": "http://0.0.0.0:8080"` in `C:\ProgramData\Minecraft Server Manager\appsettings.json` (keeping the current port). `--local-only` undoes it. With the zip, edit `Urls` in the `appsettings.json` next to the executable instead. To listen on one interface only, set `Urls` to that address, e.g. `http://192.168.1.20:8080`.
 
 2. Allow the port through Windows Firewall:
 
@@ -31,7 +33,7 @@ The panel's web server (Kestrel) can serve HTTPS with a certificate in PFX forma
 
 1. Get a certificate for the name you'll use (e.g. `mc-panel.example.local`): from your internal certificate authority, or from a public CA if the name is public. Export it as a `.pfx` with its private key.
 2. Copy it to the server, e.g. `C:\certs\panel.pfx`.
-3. In `appsettings.json`, **replace** the `"Urls"` line with:
+3. Open `C:\ProgramData\Minecraft Server Manager\appsettings.json` (or, with the zip, the `appsettings.json` next to the executable) and **replace** its `"Urls"` line with:
 
    ```json
    "Kestrel": {
@@ -52,7 +54,7 @@ The panel's web server (Kestrel) can serve HTTPS with a certificate in PFX forma
 4. Open TCP 8443 in the firewall and restart the service.
 5. Browse to `https://mc-panel.example.local:8443`.
 
-> Protect `appsettings.json` if it contains the certificate password: by default only administrators and the service account should be able to read the panel folder. Alternatively load the certificate from the Windows certificate store; see Microsoft's [Kestrel endpoint configuration](https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel/endpoints) documentation.
+> Don't put this in `C:\Program Files\Minecraft Server Manager\appsettings.json`: that file is replaced when you upgrade. Protect the file if it contains the certificate password; only administrators and the service account should be able to read it. Alternatively load the certificate from the Windows certificate store; see Microsoft's [Kestrel endpoint configuration](https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel/endpoints) documentation.
 
 ## Option 3: Behind a reverse proxy
 

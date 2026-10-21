@@ -7,20 +7,14 @@ This gets you from the download to a running Minecraft server in about ten minut
 You need:
 
 - A Windows Server 2016+ or Windows 10/11 (x64) machine with administrator access.
-- The release file `MinecraftServerManager-win-x64.zip`.
 - Internet access from the server (to download Minecraft and Java).
 
 ## Steps
 
 1. **Install Java.** Download and install a 64-bit JDK from [Eclipse Temurin](https://adoptium.net/temurin/releases/). Choose **Java 21** for Minecraft 1.20.5 to 1.21.x, or **Java 25** for Minecraft 26.x. Tick *Set JAVA_HOME* during setup.
-2. **Extract the release** to a permanent folder, for example `C:\MinecraftManager`.
-3. **Install the service.** Open PowerShell **as administrator** in that folder and run:
-
-   ```powershell
-   .\install-service.ps1 -OpenMinecraftPort
-   ```
-
-4. **Open the panel** at <http://localhost:8080> in a browser on the server.
+2. **Download** `MinecraftServerManager-<version>-Setup.exe` from the [Releases page](https://gitea.uk.local:3001/Apps/minecraft-server-management/releases).
+3. **Run the setup wizard.** Keep the defaults (panel port 8080, Minecraft players allowed through the firewall) and click **Install**. If SmartScreen warns about the download, click **More info → Run anyway**.
+4. **Click Finish.** The panel opens in your browser at <http://localhost:8080>.
 5. **Create your admin account** and confirm the server directory (default `C:\MinecraftServer`). See [Installation](Installation#first-run-setup).
 6. **Select Java.** Go to **Settings → Java**, click **Detect installed Java**, choose the version you installed, then **Save settings**.
 7. **Install Minecraft.** Go to **Updates** and click **Install** next to the latest release your Java supports.

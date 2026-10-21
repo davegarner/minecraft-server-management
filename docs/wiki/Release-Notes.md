@@ -1,8 +1,15 @@
 # Release Notes
 
-## 1.0.0 (20 October 2026)
+## 1.0.0 (21 October 2026)
 
-First release.
+First release. Download it from the [Releases page](https://gitea.uk.local:3001/Apps/minecraft-server-management/releases).
+
+### Installation
+
+- **Setup wizard** (`MinecraftServerManager-1.0.0-Setup.exe`): installs to Program Files, registers and starts the Windows service, adds the firewall rules you choose, creates a Start menu shortcut and opens the panel. Running a newer version upgrades in place and keeps your settings.
+- **MSI** (`MinecraftServerManager-1.0.0-x64.msi`) for unattended installs, Group Policy and Intune, with `PANELPORT`, `REMOTEACCESS` and `OPENMINECRAFTPORT` properties.
+- **Portable zip** with `install-service.ps1` for manual installs.
+- Panel settings are kept in `C:\ProgramData\Minecraft Server Manager`, so upgrades never overwrite them. `MinecraftServerManager.exe configure` changes the panel's port and network access.
 
 ### Features
 
@@ -23,3 +30,4 @@ First release.
 - Updates install the vanilla server only (other jars can be launched but must be updated by hand).
 - Java Edition only (no Bedrock).
 - Behind a reverse proxy, the sign-in lockout counts attempts per proxy address.
+- The installers aren't code-signed, so SmartScreen may warn when you first run them.

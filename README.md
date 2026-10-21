@@ -1,8 +1,11 @@
 # Minecraft Server Manager
 
 A web-based control panel for running a **Minecraft: Java Edition** dedicated server on **Windows Server**.
-It ships as a single self-contained `.exe` (no .NET install needed), runs as a Windows service, and is
+It installs with a setup wizard (no .NET install needed), runs as a Windows service, and is
 managed from a browser, either on the server itself or remotely.
+
+**Download:** [Releases on Gitea](https://gitea.uk.local:3001/Apps/minecraft-server-management/releases) ·
+[Releases on GitHub](https://github.com/davegarner/minecraft-server-management/releases)
 
 ## Documentation
 
@@ -37,38 +40,40 @@ It also handles:
 
 ## Quick start
 
-1. **Get the release.** Copy `MinecraftServerManager-win-x64.zip` (see [Building](#building)) to the server and extract it to a permanent folder, for example `C:\MinecraftManager`.
-2. **Run it.** Double-click `MinecraftServerManager.exe`, or install it as a service (below).
-3. **Open the panel** at <http://localhost:8080> in a browser on the server.
-4. **Create the admin account** and choose the server directory (default `C:\MinecraftServer`).
-5. Go to **Settings → Java**, click **Detect installed Java**, pick the right Java and **Save**.
-6. Go to **Updates** and install the latest release. Accept the Minecraft EULA when prompted.
-7. Optionally adjust **Server Properties** or create a world on **Worlds**, then press **Start** on the Dashboard.
+1. **Download** `MinecraftServerManager-<version>-Setup.exe` from the Releases page and run it on the server.
+   Keep the defaults (panel port 8080, Minecraft players allowed through the firewall) and click **Install**.
+   The installers aren't code-signed yet, so if SmartScreen warns, check the file against `SHA256SUMS.txt` and choose **More info → Run anyway**.
+2. **Click Finish.** The panel opens at <http://localhost:8080>. It runs as a Windows service and starts with Windows.
+3. **Create the admin account** and choose the server directory (default `C:\MinecraftServer`).
+4. Go to **Settings → Java**, click **Detect installed Java**, pick the right Java and **Save**.
+5. Go to **Updates** and install the latest release. Accept the Minecraft EULA when prompted.
+6. Optionally adjust **Server Properties** or create a world on **Worlds**, then press **Start** on the Dashboard.
 
-### Run as a Windows service (recommended)
-
-From an **elevated** PowerShell prompt in the extracted folder:
-
-```powershell
-.\install-service.ps1 -OpenMinecraftPort
-```
-
-This registers the `MinecraftServerManager` service (automatic start, restart on failure) and opens TCP 25565 for players.
 To have the Minecraft server start whenever Windows boots, enable **Settings → Start the Minecraft server when the manager starts**.
+To upgrade, run the new version's setup wizard; your settings, worlds and backups are kept.
 
-Remove it with `.\uninstall-service.ps1` (add `-RemoveFirewallRules` to remove the firewall rules too). Your worlds, backups and settings are kept.
+### Other ways to install
+
+| Download | Use it for |
+| --- | --- |
+| `MinecraftServerManager-<version>-Setup.exe` | Most people: a setup wizard that installs and upgrades |
+| `MinecraftServerManager-<version>-x64.msi` | Unattended installs, Group Policy or Intune: `msiexec /i <file> /qn PANELPORT=8080 REMOTEACCESS=0 OPENMINECRAFTPORT=1` |
+| `MinecraftServerManager-<version>-win-x64.zip` | Portable or multiple instances: extract it, then run `.\install-service.ps1 -OpenMinecraftPort` from an elevated PowerShell prompt |
+
+See [Installation](https://gitea.uk.local:3001/Apps/minecraft-server-management/wiki/Installation) in the wiki for details and silent-install switches.
 
 > The service runs as **LocalSystem**, so Java must be reachable by that account. Choosing a full path to `java.exe` in Settings (as **Detect** does) avoids PATH issues.
 
 ## Remote access and HTTPS
 
-By default the panel only listens on `localhost`. To manage it from another machine, edit `appsettings.json`:
+By default the panel only listens on `localhost`. To manage it from another machine, tick *Allow other computers to open the web panel* in the setup wizard, or afterwards run this from an elevated PowerShell prompt:
 
-```json
-"Urls": "http://0.0.0.0:8080"
+```powershell
+& "C:\Program Files\Minecraft Server Manager\MinecraftServerManager.exe" configure --remote-access
+Restart-Service MinecraftServerManager
 ```
 
-then restart the service and open the port with `.\install-service.ps1 -OpenPanelPort`, or create the firewall rule yourself.
+and allow the port through Windows Firewall. Settings live in `C:\ProgramData\Minecraft Server Manager\appsettings.json`, which upgrades don't overwrite (with the zip, edit the `appsettings.json` next to the executable).
 
 Plain HTTP sends your password unencrypted, so for anything beyond a trusted LAN use HTTPS. Either put the panel behind a
 reverse proxy (IIS, Caddy, nginx), or give Kestrel a certificate directly by replacing `Urls` with:
@@ -88,13 +93,15 @@ reverse proxy (IIS, Caddy, nginx), or give Kestrel a certificate directly by rep
 
 | Path | Contents |
 | --- | --- |
-| `<install folder>\data\settings.json` | Panel settings and the admin password hash |
-| `<install folder>\data\keys\` | Keys that protect sign-in cookies |
+| `C:\Program Files\Minecraft Server Manager\` | The program (replaced on upgrade) |
+| `C:\ProgramData\Minecraft Server Manager\appsettings.json` | Panel address, port and HTTPS settings |
+| `C:\ProgramData\Minecraft Server Manager\data\settings.json` | Panel settings and the admin password hash |
+| `C:\ProgramData\Minecraft Server Manager\data\keys\` | Keys that protect sign-in cookies |
 | `<server directory>\` | `server.jar`, `server.properties`, `eula.txt`, worlds, `ops.json`, etc. |
 | `<server directory>\backups\` | World backups (configurable in Settings, ideally on another drive) |
 | `<server directory>\.manager\jars\` | The last 5 replaced server jars, for rollback |
 
-Set `Manager:DataDirectory` in `appsettings.json` to keep panel data elsewhere.
+With the zip, panel data is in `data\` next to the executable. Set `Manager:DataDirectory` in `appsettings.json` to keep it elsewhere.
 **Forgot the password?** Stop the service, delete `AdminPasswordHash` from `data\settings.json` (or delete the file), start it again and you'll be taken to setup.
 
 ## How a few things work
@@ -106,7 +113,14 @@ Set `Manager:DataDirectory` in `appsettings.json` to keep panel data elsewhere.
 
 ## Building
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download). You can build the Windows release on Windows, macOS or Linux:
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download). To build the setup wizard, MSI, zip and checksums
+(Windows, with [Inno Setup 6.3+](https://jrsoftware.org/isdl.php); WiX comes from NuGet):
+
+```powershell
+.\scripts\build-release.ps1      # → artifacts\release\
+```
+
+The portable zip alone can be built on Windows, macOS or Linux:
 
 ```powershell
 .\scripts\publish.ps1            # Windows → dist\MinecraftServerManager-win-x64.zip
@@ -114,6 +128,9 @@ Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download). You can build
 ```bash
 scripts/publish.sh               # macOS / Linux → dist/MinecraftServerManager-win-x64.zip
 ```
+
+Pushing a `v*` tag builds, tests and publishes a GitHub release (`.github/workflows/release.yml`); see
+[Development](https://gitea.uk.local:3001/Apps/minecraft-server-management/wiki/Development#release-workflow).
 
 Run locally for development (works on macOS/Linux too):
 
@@ -131,8 +148,10 @@ src/MinecraftServerManager/
   Components/Pages/          Dashboard, Console, Properties, Worlds, Backups, Updates, Players, Settings
   Components/Account/        Sign-in and first-run setup (static server-rendered)
   Endpoints/                 Backup downloads, world uploads, sign-out
+  Hosting/                   The configure command used by the installers
   wwwroot/                   Styles and small JS helpers
-scripts/                     publish, install-service, uninstall-service
+installer/                   Setup wizard (Inno Setup), MSI (WiX), installer tests, release notes template
+scripts/                     build-release, publish, install-service, uninstall-service
 tests/                       xUnit tests
 tools/fake-java/             Stand-in for java.exe to test the panel without Java or a real server
 docs/                        Wiki source, Word user guide and its generator
@@ -143,5 +162,5 @@ Built with ASP.NET Core Blazor (interactive server rendering) on .NET 10.
 ## Limitations
 
 - Manages the **vanilla** Mojang server. Paper, Fabric and Forge jars can be launched (set the jar file name in Settings), but the Updates page only installs vanilla.
-- One Minecraft server per panel instance. To manage several servers, run multiple copies of the panel with different install folders and ports.
+- One Minecraft server per panel instance. To manage several servers, run multiple copies of the panel from the zip with different folders, ports and service names.
 - *Minecraft* is a trademark of Mojang AB. This project is not affiliated with Mojang or Microsoft.

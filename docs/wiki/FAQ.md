@@ -37,10 +37,13 @@ No. The panel talks to the server directly. Leave `enable-rcon=false` unless ano
 Yes. Autosave is paused and everything is flushed to disk first, then turned back on afterwards, and players can keep playing. See [Backups](Backups#backing-up-a-running-world-safely).
 
 ### How do I move to a new server machine?
-Install the panel on the new machine, stop both servers, copy the server directory (and optionally `data\` from the panel folder) across, then select Java in [Settings](Settings#java) and start.
+Install the panel on the new machine and stop both services. Copy the server directory across to the same path, and optionally `C:\ProgramData\Minecraft Server Manager\data` (your account and panel settings), then start the service, select Java in [Settings](Settings#java) and start Minecraft. If you don't copy `data`, run first-run setup and point it at the server directory.
 
 ### How do I update the panel itself?
-See [Running as a Windows Service → Updating the panel](Running-as-a-Windows-Service#updating-the-panel).
+Download the new version's setup wizard (or MSI) and run it. It stops the service, upgrades, and starts it again, keeping your settings, worlds and backups. See [Installation → Upgrading](Installation#upgrading).
+
+### Why does Windows warn about the installer?
+The installers aren't code-signed yet, so SmartScreen may say *Windows protected your PC* for a new download. Check the file against `SHA256SUMS.txt` from the release, then choose **More info → Run anyway**.
 
 ### Can I use it on Linux or macOS?
 It's built for Windows, but the panel is cross-platform .NET, and it can be built and run on Linux or macOS for testing (see [Development](Development)). Windows-specific features (the service and the job object) only apply on Windows.

@@ -1,6 +1,6 @@
 # Installation
 
-This page covers system requirements, installing the panel, the first-run setup wizard, Java, and opening the firewall for players.
+This page covers system requirements, installing the panel with the setup wizard, first-run setup, Java, unattended installation, and upgrading or removing the panel.
 
 ## Requirements
 
@@ -28,30 +28,53 @@ The panel checks this for you before installing a version, and the [Updates](Upd
 
 Install a **JDK or JRE from [Eclipse Temurin](https://adoptium.net/temurin/releases/)** (recommended), Microsoft Build of OpenJDK, Azul Zulu or Amazon Corretto. You can install several versions side by side and choose one in [Settings](Settings).
 
-## Install the panel
+## Download
 
-1. Copy `MinecraftServerManager-win-x64.zip` to the server.
-2. Right-click it, choose **Properties**, tick **Unblock** if shown, then **Extract All…** to a permanent folder such as `C:\MinecraftManager`.
+Download the latest release from the [Releases page](https://gitea.uk.local:3001/Apps/minecraft-server-management/releases):
 
-   The folder contains:
+| File | Use it if… |
+| --- | --- |
+| **MinecraftServerManager-&lt;version&gt;-Setup.exe** | You want the simplest install. **Start here.** |
+| MinecraftServerManager-&lt;version&gt;-x64.msi | You deploy software with Group Policy, Intune or similar, or want an unattended install ([details](#unattended-installation)). |
+| MinecraftServerManager-&lt;version&gt;-win-x64.zip | You'd rather install by hand ([details](#manual-installation-from-the-zip)). |
+| SHA256SUMS.txt | Checksums to verify the downloads: `Get-FileHash <file>` in PowerShell. |
 
-   | File | Purpose |
-   | --- | --- |
-   | `MinecraftServerManager.exe` | The panel (web server and Minecraft supervisor) |
-   | `appsettings.json` | Start-up configuration: listening address, logging ([reference](Configuration-Reference)) |
-   | `wwwroot\` | Web assets |
-   | `install-service.ps1`, `uninstall-service.ps1` | Windows service helpers |
-   | `web.config` | Only used if you host the panel under IIS |
+## Install with the setup wizard
 
-3. Choose how to run it:
-   - **As a Windows service (recommended).** It starts with Windows and needs nobody logged on. See [Running as a Windows Service](Running-as-a-Windows-Service).
-   - **Interactively, for a quick test.** Double-click `MinecraftServerManager.exe`. A console window opens and shows `Now listening on: http://localhost:8080`. Closing the window stops the panel and shuts the Minecraft server down cleanly.
+1. Run **MinecraftServerManager-&lt;version&gt;-Setup.exe** and approve the administrator prompt.
 
-> **Tip:** Keep the panel folder and the Minecraft server directory separate (for example `C:\MinecraftManager` and `C:\MinecraftServer`). Updating the panel then never touches your worlds.
+   > **"Windows protected your PC"?** The installers aren't code-signed yet, so Microsoft Defender SmartScreen may show this for a new download. Check the file's SHA-256 against `SHA256SUMS.txt`, then click **More info → Run anyway**.
+
+2. **Select Destination Location.** The default `C:\Program Files\Minecraft Server Manager` is fine.
+3. **Web panel.** Choose the port the panel uses (default **8080**). Change it only if another program already uses 8080.
+4. **Network access.** Choose which Windows Firewall rules to add:
+
+   | Option | Default | Effect |
+   | --- | --- | --- |
+   | Allow Minecraft players to connect | On | Opens TCP 25565 so players can join. |
+   | Allow other computers to open the web panel | Off | Makes the panel listen on the network and opens its port. Read [Remote Access and HTTPS](Remote-Access-and-HTTPS) first. |
+
+5. **Ready to Install** summarises your choices. Click **Install**.
+6. Click **Finish**. *Open Minecraft Server Manager in your web browser* is ticked, so the panel opens at `http://localhost:8080`.
+
+The panel now runs in the background as a Windows service and starts with Windows. A **Minecraft Server Manager** shortcut in the Start menu opens it again later.
+
+### What the setup wizard installs
+
+| Item | Location / name |
+| --- | --- |
+| Program files | `C:\Program Files\Minecraft Server Manager\` |
+| Panel settings, sign-in and keys | `C:\ProgramData\Minecraft Server Manager\` (`appsettings.json` and `data\`) |
+| Windows service | **Minecraft Server Manager** (`MinecraftServerManager`): automatic start, Local System, restarts if it fails |
+| Firewall rules | *Minecraft Server (TCP 25565)* and, if chosen, *Minecraft Server Manager (TCP &lt;port&gt;)* |
+| Start menu | *Minecraft Server Manager* (opens the panel in your browser) |
+| Uninstaller | *Settings → Apps → Installed apps → Minecraft Server Manager* |
+
+Your Minecraft server files and worlds go in a separate folder that you choose during first-run setup (default `C:\MinecraftServer`). See [Files and Folders](Files-and-Folders).
 
 ## First-run setup
 
-Open <http://localhost:8080>. The first time, you're taken to the setup page.
+The first time the panel opens, you're asked to create the administrator account.
 
 ![First-run setup](images/setup-wizard.png)
 
@@ -84,25 +107,69 @@ See [Settings](Settings#java) for details.
 
 ![Updates page before anything is installed](images/updates-nothing-installed.png)
 
-## Open the firewall for players
-
-Players connect to TCP port **25565** (or whatever `server-port` is set to). Either:
-
-- run `.\install-service.ps1 -OpenMinecraftPort`, or
-- create the rule yourself:
-
-  ```powershell
-  New-NetFirewallRule -DisplayName "Minecraft Server (TCP 25565)" -Direction Inbound -Protocol TCP -LocalPort 25565 -Action Allow
-  ```
-
-For players outside your network, also forward TCP 25565 on your router or firewall to this server.
-
 ## Start the server
 
 Click **Start** on the Dashboard. The first start downloads libraries and generates the world, which can take a minute or two. The status changes from **Starting…** to **Running** when Minecraft reports it's ready.
 
+### Open the firewall for players
+
+The installers add the *Minecraft Server (TCP 25565)* rule unless you unticked it. To add it yourself, or for a different `server-port`, run this in an administrator PowerShell window:
+
+```powershell
+New-NetFirewallRule -DisplayName "Minecraft Server (TCP 25565)" -Direction Inbound -Protocol TCP -LocalPort 25565 -Action Allow
+```
+
+For players outside your network, also forward TCP 25565 on your router or firewall to this server.
+
+## Upgrading
+
+Run the setup wizard for the new version. It detects the existing installation, skips the option pages, stops the service (which shuts the Minecraft server down cleanly), replaces the program files, and starts the service again. Your panel settings, sign-in, worlds and backups are kept, as are your port and firewall choices.
+
+The MSI upgrades the same way: install the newer `.msi` over the old one.
+
+## Uninstalling
+
+Use *Settings → Apps → Installed apps → Minecraft Server Manager → Uninstall* (or *Programs and Features*). The uninstaller stops and removes the service, the firewall rules, the Start menu shortcut and the program files. It then asks whether to delete the panel's settings and sign-in details. **Your Minecraft server directory, worlds and backups are never removed**; delete them yourself if you no longer need them.
+
+## Unattended installation
+
+### Setup wizard switches
+
+```powershell
+MinecraftServerManager-<version>-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART [/PORT=8080] [/OPENMINECRAFTPORT=1] [/REMOTEACCESS=0] [/LOG="setup.log"]
+"C:\Program Files\Minecraft Server Manager\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+```
+
+`/SILENT` shows progress without asking questions; `/DIR="D:\Apps\Minecraft Server Manager"` changes the install folder. A silent uninstall keeps the panel settings.
+
+### MSI properties
+
+```powershell
+msiexec /i MinecraftServerManager-<version>-x64.msi /qn [PANELPORT=8080] [OPENMINECRAFTPORT=1] [REMOTEACCESS=0] [/l*v install.log]
+msiexec /x MinecraftServerManager-<version>-x64.msi /qn
+```
+
+| Property | Default | Meaning |
+| --- | --- | --- |
+| `PANELPORT` | `8080` | Port for the web panel. |
+| `OPENMINECRAFTPORT` | `1` | `1` adds the *Minecraft Server (TCP 25565)* firewall rule. |
+| `REMOTEACCESS` | `0` | `1` makes the panel listen on the network and adds a firewall rule for `PANELPORT`. |
+
+The MSI has no wizard; double-clicking it installs with the defaults. On an upgrade or uninstall, properties you don't specify keep their previous values. The panel's port is only applied on a first install; to change it later use [`configure`](Configuration-Reference#the-configure-command).
+
+## Manual installation from the zip
+
+1. Right-click the zip, choose **Properties**, tick **Unblock** if shown, then **Extract All…** to a permanent folder such as `C:\MinecraftManager`.
+2. Either double-click `MinecraftServerManager.exe` for a quick test (a console window shows `Now listening on: http://localhost:8080`; closing it stops the panel and the Minecraft server), or install it as a service from an **administrator** PowerShell window in that folder:
+
+   ```powershell
+   .\install-service.ps1 -OpenMinecraftPort
+   ```
+
+With the zip, panel settings are kept in a `data` folder next to the executable and the address is set in the `appsettings.json` beside it. See [Running as a Windows Service](Running-as-a-Windows-Service) and [Configuration Reference](Configuration-Reference).
+
 ## Next steps
 
-- [Running as a Windows Service](Running-as-a-Windows-Service), if you haven't already
 - [Backups](Backups): turn on the schedule
 - [Remote Access and HTTPS](Remote-Access-and-HTTPS): manage the panel from another PC
+- [Running as a Windows Service](Running-as-a-Windows-Service): service management and logs
