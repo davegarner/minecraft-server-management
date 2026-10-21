@@ -62,7 +62,7 @@ To remove it: `.\uninstall-service.ps1` (add `-RemoveFirewallRules` to remove th
 
 ## Service account
 
-The service runs as **`NT SERVICE\MinecraftServerManager`**, a virtual account Windows manages for the service (it has no password and can't be used to sign in). It has the rights of an ordinary user plus access to the panel's own folders, so the panel and Minecraft can't change the rest of the machine. Versions before 1.0.3 ran as Local System; upgrading switches to the virtual account.
+The service runs as **`NT SERVICE\MinecraftServerManager`**, a virtual account Windows manages for the service (it has no password and can't be used to sign in). It has the rights of an ordinary user plus access to the panel's own folders, so the panel and Minecraft can't change the rest of the machine. Versions before 1.0.4 ran as Local System; upgrading switches to the virtual account.
 
 When installing or upgrading, the installers (and `install-service.ps1`) run `MinecraftServerManager.exe secure`, which:
 
@@ -78,7 +78,7 @@ Folders the panel creates itself (the server directory at first-run setup, a new
 To use a different account, pass it to the script; it's kept on later upgrades with the setup wizard (the MSI always uses the virtual account):
 
 ```powershell
-.\install-service.ps1 -Account LocalSystem            # the behaviour of versions before 1.0.3
+.\install-service.ps1 -Account LocalSystem            # the behaviour of versions before 1.0.4
 .\install-service.ps1 -Account ".\mcservice"          # then set its password:
 sc.exe config MinecraftServerManager obj= ".\mcservice" password= "<password>"
 ```

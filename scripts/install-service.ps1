@@ -13,7 +13,7 @@
 .PARAMETER Account
     The account the service runs as. Defaults to NT SERVICE\<ServiceName>, or for an existing service to the
     account it already uses unless that is LocalSystem. "LocalSystem" restores the behaviour of versions
-    before 1.0.3. Another account needs a password set separately and access to Java and the server folders.
+    before 1.0.4. Another account needs a password set separately and access to Java and the server folders.
 
 .PARAMETER OpenPanelPort
     Adds a Windows Firewall rule for the web panel port. Only needed for access from other machines;
@@ -69,7 +69,7 @@ if ($existing) {
 & sc.exe failure $ServiceName reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
 
 # Run as the service's own virtual account (no password), then let it use the panel's folders. An account an
-# administrator chose is kept; Local System, the default before 1.0.3, is replaced.
+# administrator chose is kept; Local System, the default before 1.0.4, is replaced.
 $current = (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").StartName
 if (-not $Account) { $Account = if ($current -and $current -ne "LocalSystem") { $current } else { "NT SERVICE\$ServiceName" } }
 if ($Account -ne $current) {

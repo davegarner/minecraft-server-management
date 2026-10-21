@@ -31,7 +31,7 @@ The page lost its live connection, usually because the panel restarted or the ne
 | --- | --- |
 | *No server jar was found* | Install a version on [Updates](Updates), or fix *Server jar file name* in [Settings](Settings#server). |
 | *The Minecraft EULA has not been accepted* | Click **I agree** on the Dashboard or Updates page after reading the EULA. |
-| *Could not launch Java using '…'* | The Java path is wrong. Use **Detect installed Java** in [Settings](Settings#java). If it worked before upgrading to 1.0.3, Java is probably inside a user's profile, which the service's account can't read: install Java system-wide (e.g. Eclipse Temurin) and select it. |
+| *Could not launch Java using '…'* | The Java path is wrong. Use **Detect installed Java** in [Settings](Settings#java). If it worked before upgrading to 1.0.4, Java is probably inside a user's profile, which the service's account can't read: install Java system-wide (e.g. Eclipse Temurin) and select it. |
 | *Access to the path '…' is denied* | The service can't use a folder you chose. Run `MinecraftServerManager.exe secure` as administrator ([how](Configuration-Reference#the-secure-command)). |
 | *The server directory '…' does not exist* | Fix the path in Settings. |
 | Console: `UnsupportedClassVersionError … class file version 65.0` | Java is too old: 65 = Java 21, 69 = Java 25, 61 = Java 17. Install the right Java and select it. |

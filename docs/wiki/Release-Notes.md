@@ -1,8 +1,8 @@
 # Release Notes
 
-## 1.0.3 (21 October 2026)
+## 1.0.4 (21 October 2026)
 
-A security update; upgrading is recommended. Run the new setup over the previous version; your settings, worlds and backups are kept.
+A security update; upgrading is recommended. (Version 1.0.3 was tagged but never released; 1.0.4 contains its changes.) Run the new setup over the previous version; your settings, worlds and backups are kept.
 
 - **The service no longer runs as Local System.** It runs as its own virtual account, `NT SERVICE\MinecraftServerManager`, and the installer limits the panel's settings, sign-in keys and server folders to administrators and that account, so other users on the server can't read them or change the server's files. **Java must be installed system-wide**: a JDK inside a user's profile can't be used by the service ([details](Running-as-a-Windows-Service#service-account)).
 - **Sign-in keys** are encrypted with Windows DPAPI.
