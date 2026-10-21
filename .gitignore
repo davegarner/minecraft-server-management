@@ -20,3 +20,6 @@ Thumbs.db
 
 # Documentation build dependencies
 docs/build/node_modules/
+
+# Release build output
+artifacts/

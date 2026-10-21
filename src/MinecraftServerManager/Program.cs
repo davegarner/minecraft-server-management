@@ -3,7 +3,12 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using MinecraftServerManager.Components;
 using MinecraftServerManager.Endpoints;
+using MinecraftServerManager.Hosting;
 using MinecraftServerManager.Services;
+
+// `MinecraftServerManager.exe configure ...` writes the machine-wide settings and exits (used by the installers).
+if (args.Length > 0 && args[0].Equals(MachineConfiguration.Command, StringComparison.OrdinalIgnoreCase))
+    return MachineConfiguration.Run(args[1..]);
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -12,6 +17,13 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     // resolve appsettings.json and wwwroot next to the executable.
     ContentRootPath = IsPublishedLayout() ? AppContext.BaseDirectory : null,
 });
+
+// Machine-wide settings written by the installers override the appsettings.json shipped next to the
+// executable. Environment variables and arguments are re-added so they still take precedence.
+builder.Configuration
+    .AddJsonFile(MachineConfiguration.FilePath, optional: true, reloadOnChange: false)
+    .AddEnvironmentVariables()
+    .AddCommandLine(args);
 
 builder.Services.AddWindowsService(options => options.ServiceName = "MinecraftServerManager");
 builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(90));
@@ -81,6 +93,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+return 0;
 
 static bool IsPublishedLayout() =>
     File.Exists(Path.Combine(AppContext.BaseDirectory, "appsettings.json"))

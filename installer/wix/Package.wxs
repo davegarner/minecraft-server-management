@@ -1,0 +1,92 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+
+  <Package Name="Minecraft Server Manager"
+           Manufacturer="Minecraft Server Manager"
+           Version="$(var.Version)"
+           UpgradeCode="01A6723A-0633-4078-A5B8-A79291070486"
+           Scope="perMachine"
+           Language="1033"
+           Compressed="yes">
+    <SummaryInformation Description="Web control panel for a Minecraft Java Edition server" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/davegarner/minecraft-server-management" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/davegarner/minecraft-server-management/wiki" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!-- Options, settable on the msiexec command line. -->
+    <Property Id="PANELPORT" Value="8080" Secure="yes" />
+    <Property Id="REMOTEACCESS" Value="0" Secure="yes" />
+    <Property Id="OPENMINECRAFTPORT" Value="1" Secure="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Minecraft Server Manager" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="Minecraft Server Manager" Level="1">
+      <ComponentGroupRef Id="PublishedFiles" />
+      <ComponentRef Id="ServiceExecutable" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="MinecraftFirewallRule" />
+      <ComponentRef Id="PanelFirewallRule" />
+    </Feature>
+
+    <!-- The executable, registered as an automatically starting service that restarts after a failure. -->
+    <Component Id="ServiceExecutable" Directory="INSTALLFOLDER">
+      <File Id="MainExe" Source="$(var.PublishDir)\MinecraftServerManager.exe" KeyPath="yes" />
+      <ServiceInstall Id="Service"
+                      Name="MinecraftServerManager"
+                      DisplayName="Minecraft Server Manager"
+                      Description="Web control panel for a Minecraft Java Edition server."
+                      Type="ownProcess"
+                      Start="auto"
+                      ErrorControl="normal"
+                      Account="LocalSystem"
+                      Vital="yes">
+        <util:ServiceConfig FirstFailureActionType="restart"
+                            SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="60"
+                            ResetPeriodInDays="1" />
+      </ServiceInstall>
+      <!-- Stopping the service shuts the Minecraft server down cleanly before files are replaced or removed. -->
+      <ServiceControl Id="ServiceControl" Name="MinecraftServerManager" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+    </Component>
+
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder">
+      <util:InternetShortcut Id="PanelShortcut" Name="Minecraft Server Manager" Target="http://localhost:[PANELPORT]/" Type="url" />
+      <RegistryValue Root="HKLM" Key="Software\Minecraft Server Manager" Name="PanelPort" Type="string" Value="[PANELPORT]" KeyPath="yes" />
+    </Component>
+
+    <Component Id="MinecraftFirewallRule" Directory="INSTALLFOLDER" Condition="OPENMINECRAFTPORT = 1">
+      <fw:FirewallException Id="MinecraftPort" Name="Minecraft Server (TCP 25565)" Port="25565" Protocol="tcp" Scope="any" />
+      <RegistryValue Root="HKLM" Key="Software\Minecraft Server Manager" Name="MinecraftFirewallRule" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="PanelFirewallRule" Directory="INSTALLFOLDER" Condition="REMOTEACCESS = 1">
+      <fw:FirewallException Id="PanelPort" Name="Minecraft Server Manager (TCP [PANELPORT])" Port="[PANELPORT]" Protocol="tcp" Scope="any" />
+      <RegistryValue Root="HKLM" Key="Software\Minecraft Server Manager" Name="PanelFirewallRule" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!--
+      Write the machine-wide settings (panel address and data folder) before the service starts. Existing
+      settings are kept, so upgrades and repairs never reset a port changed with "configure".
+    -->
+    <SetProperty Id="REMOTEACCESSARG" Value="--remote-access" Before="ConfigurePanel" Sequence="execute" Condition="REMOTEACCESS = 1" />
+    <CustomAction Id="ConfigurePanel"
+                  FileRef="MainExe"
+                  ExeCommand="configure --keep-existing --port [PANELPORT] [REMOTEACCESSARG]"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+    <InstallExecuteSequence>
+      <Custom Action="ConfigurePanel" Before="StartServices" Condition="NOT REMOVE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

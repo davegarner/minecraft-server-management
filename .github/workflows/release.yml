@@ -1,0 +1,90 @@
+# Builds the setup wizard, MSI and zip on Windows and tests installing, upgrading and uninstalling them.
+# Pushing a tag such as v1.0.0 (which must match <Version> in the project file) also publishes a GitHub release.
+#
+# The repository is push-mirrored from Gitea; this workflow only runs on GitHub.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'src/**'
+      - 'installer/**'
+      - 'scripts/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # create releases
+
+jobs:
+  build:
+    if: github.server_url == 'https://github.com'
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content src/MinecraftServerManager/MinecraftServerManager.csproj
+          $version = @($project.Project.PropertyGroup.Version | Where-Object { $_ })[0]
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME doesn't match the project version $version."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Run tests
+        run: dotnet test --configuration Release
+
+      - name: Build release
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Version ${{ steps.version.outputs.version }}
+
+      - name: Test installers
+        shell: pwsh
+        run: >
+          ./installer/tests/Test-Installers.ps1
+          -SetupExe artifacts/release/MinecraftServerManager-${{ steps.version.outputs.version }}-Setup.exe
+          -Msi artifacts/release/MinecraftServerManager-${{ steps.version.outputs.version }}-x64.msi
+
+      - name: Upload release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: MinecraftServerManager-${{ steps.version.outputs.version }}
+          path: artifacts/release/
+
+      - name: Upload installer test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-test-logs
+          path: artifacts/test-logs/
+          if-no-files-found: ignore
+
+      - name: Prepare release notes
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          (Get-Content installer/RELEASE_NOTES.md -Raw).Replace('{{VERSION}}', '${{ steps.version.outputs.version }}') |
+            Set-Content artifacts/release-notes.md
+
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Minecraft Server Manager ${{ steps.version.outputs.version }}
+          body_path: artifacts/release-notes.md
+          files: |
+            artifacts/release/*.exe
+            artifacts/release/*.msi
+            artifacts/release/*.zip
+            artifacts/release/SHA256SUMS.txt

@@ -9,6 +9,9 @@
     <Product>Minecraft Server Manager</Product>
     <!-- Publish as a single self-contained executable (see scripts/publish.ps1). -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <Company>Minecraft Server Manager</Company>
+    <Description>Web control panel for a Minecraft Java Edition server</Description>
   </PropertyGroup>
 
   <ItemGroup>

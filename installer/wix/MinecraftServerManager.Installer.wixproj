@@ -1,0 +1,25 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <!--
+    Windows Installer package for managed/unattended deployment. Build on Windows with scripts\build-release.ps1,
+    which publishes the app and generates the file list ($(GeneratedFilesWxs)) first.
+
+      msiexec /i MinecraftServerManager-<version>-x64.msi /qn [PANELPORT=8080] [REMOTEACCESS=1] [OPENMINECRAFTPORT=0]
+  -->
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <OutputName>MinecraftServerManager-$(Version)-x64</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <DefineConstants>Version=$(Version);PublishDir=$(AppPublishDir);IconFile=$(MSBuildThisFileDirectory)..\..\src\MinecraftServerManager\app.ico</DefineConstants>
+    <!-- ICE38/ICE57 flag the per-machine Start menu shortcut's HKLM key path; that's intended for a per-machine package. -->
+    <SuppressIces>ICE38;ICE57</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(GeneratedFilesWxs)" Condition="'$(GeneratedFilesWxs)' != ''" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Firewall.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>
