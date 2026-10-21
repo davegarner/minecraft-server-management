@@ -1,5 +1,12 @@
 # Release Notes
 
+## 1.0.2 (21 October 2026)
+
+A maintenance release. To upgrade, run the new setup over the previous version; your settings, worlds and backups are kept.
+
+- **Under the hood:** the code is reorganised by feature with enforced dependency rules, and player tracking, server log parsing and the crash-restart rules are now covered by tests. Features and behaviour are unchanged.
+- **Players:** if saving the whitelist setting fails, the page now reports the error instead of disconnecting.
+
 ## 1.0.1 (21 October 2026)
 
 A performance update. To upgrade, run the new setup over 1.0.0; your settings, worlds and backups are kept.

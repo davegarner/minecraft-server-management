@@ -7,7 +7,7 @@
 ; Silent uninstall: "C:\Program Files\Minecraft Server Manager\unins000.exe" /VERYSILENT
 
 #ifndef AppVersion
-  #define AppVersion "1.0.1"
+  #define AppVersion "1.0.2"
 #endif
 #ifndef PublishDir
   #define PublishDir "..\..\artifacts\publish"
