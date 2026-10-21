@@ -88,7 +88,7 @@ Click **Create account & continue**. You're signed in and taken to the Dashboard
 
 ![Dashboard on first run](images/dashboard-first-run.png)
 
-> **Note:** There is a single administrator account. Anyone who can reach the setup page before it's completed could claim it, so complete setup straight after installing. By default the panel only listens on `localhost`, so this is only possible from the server itself.
+> **Note:** There is a single administrator account, created by whoever completes setup first, so complete it straight after installing. Setup only works in a browser on the server itself (`http://localhost:8080`), even if the panel accepts connections from other computers. To run it from another computer, for example on Server Core, set `"AllowRemoteSetup": true` under `"Manager"` in `C:\ProgramData\Minecraft Server Manager\appsettings.json` and restart the service; remove it again afterwards.
 
 ## Choose Java
 

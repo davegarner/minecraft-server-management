@@ -344,6 +344,7 @@ public sealed partial class BackupService(
     private static void ExtractArchive(string archivePath, string serverDirectory, CancellationToken cancellationToken)
     {
         using var archive = ZipFile.OpenRead(archivePath);
+        SafeZip.EnsureSpaceFor(archive.Entries, serverDirectory);
         foreach (var entry in archive.Entries)
         {
             cancellationToken.ThrowIfCancellationRequested();

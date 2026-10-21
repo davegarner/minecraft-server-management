@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 using MinecraftServerManager.Components.Shared;
 using MinecraftServerManager.Features.Auth;
 using MinecraftServerManager.Features.Backups;
@@ -33,7 +35,10 @@ public static class ServiceRegistration
         services.AddSingleton<UpdateService>();
         services.AddSingleton<PlayerService>();
 
-        // UI state: one notification queue per browser circuit.
+        // Per browser circuit: re-checking the sign-in, and the notification queue.
+        services.AddScoped<CircuitConnection>();
+        services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<CircuitConnection>());
+        services.AddScoped<AuthenticationStateProvider, SecurityStampRevalidator>();
         services.AddScoped<ToastService>();
         return services;
     }

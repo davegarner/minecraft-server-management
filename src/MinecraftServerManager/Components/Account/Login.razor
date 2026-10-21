@@ -56,7 +56,7 @@
 
     private async Task SignInAsync()
     {
-        var client = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var client = AuthService.ClientKey(HttpContext.Connection.RemoteIpAddress);
         if (Auth.IsLockedOut(client, out var remaining))
         {
             _error = $"Too many failed attempts. Try again in {Math.Ceiling(remaining.TotalMinutes)} minute(s).";

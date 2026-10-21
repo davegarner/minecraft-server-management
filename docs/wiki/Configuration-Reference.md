@@ -85,6 +85,7 @@ A typical installer-written ProgramData file:
 | --- | --- | --- |
 | `Urls` | `http://localhost:8080` | Address(es) the panel listens on. Separate several with `;`, e.g. `http://localhost:8080;http://192.168.1.20:8080`. Use `0.0.0.0` for all interfaces. See [Remote Access and HTTPS](Remote-Access-and-HTTPS). |
 | `Manager:DataDirectory` | *(blank)* | Folder for panel data (`settings.json`, sign-in keys). Blank means a `data` folder next to the executable. Relative paths are relative to the panel folder. |
+| `Manager:AllowRemoteSetup` | `false` | Allow first-run setup from other computers. By default it only works in a browser on the server (`http://localhost:<port>`). Turn it off again once setup is done. |
 | `Logging:LogLevel` | see above | Log levels for the console window (when run interactively). Levels: `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, `None`. |
 | `Logging:EventLog:LogLevel` | see above | Log levels written to the Windows Event Log when running as a service. |
 | `AllowedHosts` | `*` | Host names the panel answers to. Set to your host name(s), separated by `;`, to reject requests for other names. |

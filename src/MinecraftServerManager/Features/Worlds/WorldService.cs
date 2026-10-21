@@ -206,6 +206,7 @@ public sealed class WorldService(
         var prefix = levelDat[..^"level.dat".Length];
 
         Directory.CreateDirectory(destination);
+        SafeZip.EnsureSpaceFor(archive.Entries, destination);
         foreach (var entry in archive.Entries)
         {
             var name = entry.FullName.Replace('\\', '/');

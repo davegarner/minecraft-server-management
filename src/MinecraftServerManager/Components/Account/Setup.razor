@@ -18,31 +18,45 @@
     <div class="alert alert-danger"><Icon Name="alert" /><div>@_error</div></div>
 }
 
-<EditForm Model="Input" method="post" OnValidSubmit="CompleteSetupAsync" FormName="setup" class="form-stack">
-    <DataAnnotationsValidator />
-    <label class="field">
-        <span>Admin username</span>
-        <InputText class="input" @bind-Value="Input.Username" autocomplete="username" />
-        <ValidationMessage For="() => Input.Username" class="field-error" />
-    </label>
-    <label class="field">
-        <span>Password</span>
-        <InputText class="input" type="password" @bind-Value="Input.Password" autocomplete="new-password" />
-        <ValidationMessage For="() => Input.Password" class="field-error" />
-    </label>
-    <label class="field">
-        <span>Confirm password</span>
-        <InputText class="input" type="password" @bind-Value="Input.ConfirmPassword" autocomplete="new-password" />
-        <ValidationMessage For="() => Input.ConfirmPassword" class="field-error" />
-    </label>
-    <label class="field">
-        <span>Server directory</span>
-        <InputText class="input mono" @bind-Value="Input.ServerDirectory" />
-        <small class="muted">server.jar, server.properties and your worlds are stored here. It's created if it doesn't exist.</small>
-        <ValidationMessage For="() => Input.ServerDirectory" class="field-error" />
-    </label>
-    <button type="submit" class="btn btn-primary btn-block">Create account &amp; continue</button>
-</EditForm>
+@if (!_allowed)
+{
+    <div class="alert alert-info">
+        <Icon Name="info" />
+        <div>
+            For security, the administrator account can only be created from the server itself.
+            Open <span class="mono">@LocalUrl</span> in a browser on the server.
+            To allow setup from other computers, set <span class="mono">Manager:AllowRemoteSetup</span> to <span class="mono">true</span> in appsettings.json.
+        </div>
+    </div>
+}
+else
+{
+    <EditForm Model="Input" method="post" OnValidSubmit="CompleteSetupAsync" FormName="setup" class="form-stack">
+        <DataAnnotationsValidator />
+        <label class="field">
+            <span>Admin username</span>
+            <InputText class="input" @bind-Value="Input.Username" autocomplete="username" />
+            <ValidationMessage For="() => Input.Username" class="field-error" />
+        </label>
+        <label class="field">
+            <span>Password</span>
+            <InputText class="input" type="password" @bind-Value="Input.Password" autocomplete="new-password" />
+            <ValidationMessage For="() => Input.Password" class="field-error" />
+        </label>
+        <label class="field">
+            <span>Confirm password</span>
+            <InputText class="input" type="password" @bind-Value="Input.ConfirmPassword" autocomplete="new-password" />
+            <ValidationMessage For="() => Input.ConfirmPassword" class="field-error" />
+        </label>
+        <label class="field">
+            <span>Server directory</span>
+            <InputText class="input mono" @bind-Value="Input.ServerDirectory" />
+            <small class="muted">server.jar, server.properties and your worlds are stored here. It's created if it doesn't exist.</small>
+            <ValidationMessage For="() => Input.ServerDirectory" class="field-error" />
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Create account &amp; continue</button>
+    </EditForm>
+}
 
 @code {
     [CascadingParameter]
@@ -52,6 +66,9 @@
     private SetupModel Input { get; set; } = default!;
 
     private string? _error;
+    private bool _allowed;
+
+    private string LocalUrl => $"{HttpContext.Request.Scheme}://localhost:{HttpContext.Connection.LocalPort}/setup";
 
     protected override void OnInitialized()
     {
@@ -61,12 +78,14 @@
             Navigation.NavigateTo("login");
             return;
         }
+        _allowed = Auth.IsSetupAllowed(HttpContext);
         // Only prefill on the initial GET; a POST carries the submitted value.
         if (HttpMethods.IsGet(HttpContext.Request.Method)) Input.ServerDirectory = Settings.Current.ServerDirectory;
     }
 
     private async Task CompleteSetupAsync()
     {
+        if (!_allowed) return;
         var directory = Input.ServerDirectory.Trim();
         if (!Path.IsPathFullyQualified(directory))
         {

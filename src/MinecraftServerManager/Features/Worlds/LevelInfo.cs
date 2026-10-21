@@ -50,12 +50,15 @@ internal static class NbtReader
 {
     private const int MaxDepth = 256;
     private const int MaxArrayLength = 16 * 1024 * 1024;
+    // A real level.dat decompresses to well under a megabyte; a crafted one could otherwise expand to gigabytes.
+    private const long MaxDecompressedBytes = 32 * 1024 * 1024;
 
     public static Dictionary<string, object?>? ReadCompressedFile(string path)
     {
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var gzip = new GZipStream(file, CompressionMode.Decompress);
-        using var buffered = new BufferedStream(gzip);
+        using var limited = new ReadLimitStream(gzip, MaxDecompressedBytes);
+        using var buffered = new BufferedStream(limited);
         return Read(buffered);
     }
 
@@ -135,5 +138,38 @@ internal static class NbtReader
         var bytes = reader.ReadBytes(count);
         if (bytes.Length != count) throw new InvalidDataException("Unexpected end of NBT data.");
         return bytes;
+    }
+}
+
+/// <summary>A read-only stream that fails once more than <c>limit</c> bytes have been read from <c>inner</c>.</summary>
+internal sealed class ReadLimitStream(Stream inner, long limit) : Stream
+{
+    private long _read;
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => _read; set => throw new NotSupportedException(); }
+
+    public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+    public override int Read(Span<byte> buffer)
+    {
+        var read = inner.Read(buffer);
+        _read += read;
+        if (_read > limit) throw new InvalidDataException($"The data is larger than the {limit:N0}-byte limit.");
+        return read;
+    }
+
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) inner.Dispose();
+        base.Dispose(disposing);
     }
 }
