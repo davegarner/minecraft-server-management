@@ -69,12 +69,13 @@ function Write-Diagnostics([string]$Log) {
             Select-Object -First 15 | ForEach-Object { Write-Host "  ! $($_.Line)" }
     }
     Get-Process msiexec, MinecraftServerManager, java -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime | Out-String | Write-Host
-    Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" | Format-List Name, State, StartName, ProcessId | Out-String | Write-Host
+    # sc.exe rather than WMI: a WMI query hung here while Windows Installer was in a bad state.
+    & sc.exe queryex $ServiceName | Out-String | Write-Host
     $since = (Get-Date).AddMinutes(-15)
-    Get-WinEvent -FilterHashtable @{ LogName = "System"; ProviderName = "Service Control Manager"; StartTime = $since } -ErrorAction SilentlyContinue |
+    Get-WinEvent -FilterHashtable @{ LogName = "System"; ProviderName = "Service Control Manager"; StartTime = $since } -MaxEvents 200 -ErrorAction SilentlyContinue |
         Where-Object Message -match "Minecraft" | Select-Object -First 20 |
         ForEach-Object { Write-Host "  [SCM $($_.TimeCreated.ToString('HH:mm:ss'))] $($_.Message)" }
-    Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $since } -ErrorAction SilentlyContinue |
+    Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $since } -MaxEvents 300 -ErrorAction SilentlyContinue |
         Where-Object { $_.ProviderName -in "MinecraftServerManager", ".NET Runtime", "Application Error", "MsiInstaller" } |
         Select-Object -First 30 |
         ForEach-Object { Write-Host "  [$($_.ProviderName) $($_.TimeCreated.ToString('HH:mm:ss'))] $((($_.Message -split "`n") | Select-Object -First 6) -join ' | ')" }
@@ -102,6 +103,15 @@ function Invoke-Program([string]$File, [string[]]$Arguments, [int]$TimeoutMinute
     $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru
     $null = $process.Handle # keeps the exit code available after the process ends
     if ($process.WaitForExit($TimeoutMinutes * 60 * 1000)) {
+        # Windows Installer occasionally fails on its own state (error 2203 reading inprogressinstallinfo.ipi, seen on
+        # CI runners) or is busy with another installation (1618). Neither is about this package, so retry once.
+        $transient = $process.ExitCode -eq 1618 -or ($log -and (Test-Path $log) -and (Select-String -Path $log -Pattern "Error 2203" -Quiet))
+        if ($transient -and $process.ExitCode -ne 0 -and -not $script:retrying) {
+            Write-Host "  [warn] $(Split-Path $File -Leaf) hit a Windows Installer error unrelated to the package (exit code $($process.ExitCode)); retrying in 30 seconds" -ForegroundColor Yellow
+            Start-Sleep -Seconds 30
+            $script:retrying = $true
+            try { return Invoke-Program $File $Arguments $TimeoutMinutes } finally { $script:retrying = $false }
+        }
         if ($process.ExitCode -notin 0, 3010) { Write-Diagnostics $log }
         return $process.ExitCode
     }
