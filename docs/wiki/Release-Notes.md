@@ -1,5 +1,16 @@
 # Release Notes
 
+## 1.0.3 (21 October 2026)
+
+A security update; upgrading is recommended. Run the new setup over the previous version; your settings, worlds and backups are kept.
+
+- **The service no longer runs as Local System.** It runs as its own virtual account, `NT SERVICE\MinecraftServerManager`, and the installer limits the panel's settings, sign-in keys and server folders to administrators and that account, so other users on the server can't read them or change the server's files. **Java must be installed system-wide**: a JDK inside a user's profile can't be used by the service ([details](Running-as-a-Windows-Service#service-account)).
+- **Sign-in keys** are encrypted with Windows DPAPI.
+- **Changing the password signs out open panel tabs** within 30 seconds; before, they stayed signed in.
+- **First-run setup only works on the server itself** (`http://localhost:<port>`), which also stops a web page taking it over through DNS rebinding. Set `Manager:AllowRemoteSetup` to allow it from another computer.
+- **Archives that would fill the disk are refused** when importing a world or restoring a backup, and a `level.dat` that expands past 32 MB is ignored.
+- **Brute-force protection** counts IPv6 addresses per /64 network.
+
 ## 1.0.2 (21 October 2026)
 
 A maintenance release. To upgrade, run the new setup over the previous version; your settings, worlds and backups are kept.

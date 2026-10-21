@@ -51,7 +51,7 @@
 
 | | |
 | --- | --- |
-| **Version** | 1.0.2 |
+| **Version** | 1.0.3 |
 | **Runs on** | Windows Server 2016 or later, Windows 10/11 (x64) |
 | **Needs** | Java 21 or later (Java 25 for Minecraft 26.x), and internet access for downloads |
 | **Default address** | `http://localhost:8080` |
