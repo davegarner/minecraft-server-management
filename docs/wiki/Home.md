@@ -54,4 +54,4 @@
 | **Needs** | Java 21 or later (Java 25 for Minecraft 26.x), and internet access for downloads |
 | **Default address** | `http://localhost:8080` |
 | **Built with** | ASP.NET Core Blazor on .NET 10, published as one self-contained `.exe` |
-| **Source** | [Apps/Minecraft-Server](https://gitea.uk.local:3001/Apps/Minecraft-Server) |
+| **Source** | [Apps/minecraft-server-management](https://gitea.uk.local:3001/Apps/minecraft-server-management) |

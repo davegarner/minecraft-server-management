@@ -13,8 +13,8 @@ Windows, macOS and Linux all work for development. Windows-only features (servic
 ## Getting the code
 
 ```bash
-git clone https://gitea.uk.local:3001/Apps/Minecraft-Server.git
-cd Minecraft-Server
+git clone https://gitea.uk.local:3001/Apps/minecraft-server-management.git
+cd minecraft-server-management
 ```
 
 ## Running locally

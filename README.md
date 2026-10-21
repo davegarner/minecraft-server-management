@@ -6,7 +6,7 @@ managed from a browser, either on the server itself or remotely.
 
 ## Documentation
 
-- **[Project wiki](https://gitea.uk.local:3001/Apps/Minecraft-Server/wiki)**: user guide with screenshots, installation, administration, troubleshooting and developer reference (source in [`docs/wiki`](docs/wiki)).
+- **[Project wiki](https://gitea.uk.local:3001/Apps/minecraft-server-management/wiki)**: user guide with screenshots, installation, administration, troubleshooting and developer reference (source in [`docs/wiki`](docs/wiki)).
 - **[User Guide (Word)](docs/Minecraft-Server-Manager-User-Guide.docx)**: the same user guide as a printable document.
 
 ## Features
