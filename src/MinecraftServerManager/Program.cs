@@ -3,8 +3,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using MinecraftServerManager.Components;
 using MinecraftServerManager.Endpoints;
+using MinecraftServerManager.Features.Auth;
+using MinecraftServerManager.Features.Settings;
 using MinecraftServerManager.Hosting;
-using MinecraftServerManager.Services;
 
 // `MinecraftServerManager.exe configure ...` writes the machine-wide settings and exits (used by the installers).
 if (args.Length > 0 && args[0].Equals(MachineConfiguration.Command, StringComparison.OrdinalIgnoreCase))
@@ -57,24 +58,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         };
     });
 
-builder.Services.AddHttpClient(UpdateService.HttpClientName, client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(10);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("MinecraftServerManager/1.0");
-});
-
-builder.Services.AddSingleton<SettingsService>();
-builder.Services.AddSingleton<AuthService>();
-builder.Services.AddSingleton<ServerPropertiesService>();
-builder.Services.AddSingleton<JavaService>();
-builder.Services.AddSingleton<ServerProcessService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<ServerProcessService>());
-builder.Services.AddSingleton<BackupService>();
-builder.Services.AddHostedService<BackupScheduler>();
-builder.Services.AddSingleton<WorldService>();
-builder.Services.AddSingleton<UpdateService>();
-builder.Services.AddSingleton<PlayerService>();
-builder.Services.AddScoped<ToastService>();
+builder.Services.AddManagerServices();
 
 var app = builder.Build();
 

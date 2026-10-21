@@ -1,4 +1,4 @@
-using MinecraftServerManager.Services;
+using MinecraftServerManager.Features.Server;
 
 namespace MinecraftServerManager.Components.Shared;
 

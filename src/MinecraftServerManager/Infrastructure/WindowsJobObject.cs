@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Infrastructure;
 
 /// <summary>
 /// Places the Minecraft server in a Windows job object with KILL_ON_JOB_CLOSE, so that if the manager

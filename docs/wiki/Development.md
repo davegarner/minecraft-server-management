@@ -107,7 +107,9 @@ To publish a release:
 
 ## Conventions
 
-- **Services** are singletons that own state and raise events; components only orchestrate and render.
+- **Features** (`Features/<Area>/`) are singletons that own state and raise events; components only orchestrate and render. Validation and anything that changes the server belong in a feature service, not a page.
+- **Dependencies** point one way (see [Architecture](Architecture#layers)): features may use lower features, `Core`, `Infrastructure` and `Util`; those never use features, and nothing outside `Components` uses the UI. `ArchitectureTests` fails if a change breaks this. New services are registered in `Hosting/ServiceRegistration.cs`.
+- **Rules shared by several features** go in `Core`; code that talks to external systems goes in `Infrastructure`.
 - **UI updates** from background threads go through `InvokeAsync(StateHasChanged)`; always unsubscribe in `Dispose`.
 - **Long operations** (backup, restore, install) run in the service and publish immutable progress records, so they continue if the user navigates away.
 - **Destructive actions** use `ConfirmDialog` (optionally with a checkbox or type-to-confirm). Feedback uses `ToastService`.

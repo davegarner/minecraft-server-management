@@ -213,13 +213,13 @@
         _installed = Updates.GetInstalled();
         _eulaAccepted = Properties.IsEulaAccepted();
         var props = Properties.Load();
-        _activeWorld = props.Get("level-name") is { Length: > 0 } level ? level : "world";
-        _motd = Fmt.StripFormatting(props.Get("motd") ?? "A Minecraft Server");
-        _maxPlayers = props.Get("max-players") ?? "20";
-        var ip = props.Get("server-ip");
-        _address = $"{(string.IsNullOrWhiteSpace(ip) ? "*" : ip)}:{props.Get("server-port") ?? "25565"}";
-        _gameMode = Capitalize(props.Get("gamemode") ?? "survival");
-        _difficulty = Capitalize(props.Get("difficulty") ?? "easy");
+        _activeWorld = props.Get(ServerPropertyKeys.LevelName) is { Length: > 0 } level ? level : "world";
+        _motd = Fmt.StripFormatting(props.Get(ServerPropertyKeys.Motd) ?? "A Minecraft Server");
+        _maxPlayers = props.Get(ServerPropertyKeys.MaxPlayers) ?? "20";
+        var ip = props.Get(ServerPropertyKeys.ServerIp);
+        _address = $"{(string.IsNullOrWhiteSpace(ip) ? "*" : ip)}:{props.Get(ServerPropertyKeys.ServerPort) ?? "25565"}";
+        _gameMode = Capitalize(props.Get(ServerPropertyKeys.GameMode) ?? "survival");
+        _difficulty = Capitalize(props.Get(ServerPropertyKeys.Difficulty) ?? "easy");
         _activeWorldInfo = Worlds.GetWorld(_activeWorld);
         _lastBackup = Backups.List().FirstOrDefault();
     }

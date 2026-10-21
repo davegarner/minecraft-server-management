@@ -1,22 +1,17 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using MinecraftServerManager.Core;
+using MinecraftServerManager.Features.Backups;
+using MinecraftServerManager.Features.Java;
+using MinecraftServerManager.Features.Server;
+using MinecraftServerManager.Features.ServerProperties;
+using MinecraftServerManager.Features.Settings;
+using MinecraftServerManager.Infrastructure.Mojang;
 using MinecraftServerManager.Util;
 
-namespace MinecraftServerManager.Services;
-
-public sealed record MinecraftVersion(string Id, string Type, string Url, DateTimeOffset ReleaseTime);
-
-public sealed record VersionManifest(string LatestRelease, string LatestSnapshot, IReadOnlyList<MinecraftVersion> Versions, DateTimeOffset FetchedAt)
-{
-    public MinecraftVersion? Find(string? id) =>
-        id is null ? null : Versions.FirstOrDefault(v => string.Equals(v.Id, id, StringComparison.OrdinalIgnoreCase));
-}
-
-public sealed record ServerDownload(string VersionId, string Url, string Sha1, long Size, int? JavaMajorVersion);
+namespace MinecraftServerManager.Features.Updates;
 
 public sealed record InstalledServer(string? VersionId, string DisplayName, int? JavaMajorVersion, long JarSize, DateTime JarModified);
 
@@ -38,7 +33,7 @@ public sealed record UpdateProgress(bool IsRunning, string? TargetVersion, strin
 
 /// <summary>Installs and updates the vanilla server jar from Mojang's official version manifest.</summary>
 public sealed class UpdateService(
-    IHttpClientFactory httpClientFactory,
+    MojangClient mojang,
     SettingsService settings,
     ServerProcessService server,
     ServerPropertiesService properties,
@@ -46,8 +41,6 @@ public sealed class UpdateService(
     JavaService java,
     ILogger<UpdateService> logger)
 {
-    public const string HttpClientName = "mojang";
-    private const string ManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     private const int ArchivedJarsToKeep = 5;
     private const string ArchiveTimestampFormat = "yyyyMMdd-HHmmss";
     private static readonly TimeSpan ManifestCacheDuration = TimeSpan.FromMinutes(15);
@@ -71,26 +64,7 @@ public sealed class UpdateService(
         {
             if (!forceRefresh && _manifest is { } fresh && DateTimeOffset.Now - fresh.FetchedAt < ManifestCacheDuration) return fresh;
 
-            using var client = httpClientFactory.CreateClient(HttpClientName);
-            await using var stream = await client.GetStreamAsync(ManifestUrl, cancellationToken);
-            var root = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken)
-                ?? throw new InvalidDataException("Empty version manifest.");
-
-            var versions = (root["versions"]?.AsArray() ?? [])
-                .Where(v => v is not null)
-                .Select(v => new MinecraftVersion(
-                    (string)v!["id"]!,
-                    (string?)v["type"] ?? "release",
-                    (string)v["url"]!,
-                    DateTimeOffset.Parse((string)v["releaseTime"]!, CultureInfo.InvariantCulture)))
-                .OrderByDescending(v => v.ReleaseTime)
-                .ToList();
-
-            _manifest = new VersionManifest(
-                (string?)root["latest"]?["release"] ?? versions.FirstOrDefault(v => v.Type == "release")?.Id ?? "",
-                (string?)root["latest"]?["snapshot"] ?? versions.FirstOrDefault()?.Id ?? "",
-                versions,
-                DateTimeOffset.Now);
+            _manifest = await mojang.GetVersionManifestAsync(cancellationToken);
             return _manifest;
         }
         finally
@@ -109,19 +83,7 @@ public sealed class UpdateService(
 
         var manifest = await GetManifestAsync(cancellationToken: cancellationToken);
         var version = manifest.Find(versionId) ?? throw new InvalidOperationException($"Minecraft version '{versionId}' was not found.");
-
-        using var client = httpClientFactory.CreateClient(HttpClientName);
-        await using var stream = await client.GetStreamAsync(version.Url, cancellationToken);
-        var root = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken);
-        var serverNode = root?["downloads"]?["server"];
-        var download = serverNode is null
-            ? null
-            : new ServerDownload(
-                version.Id,
-                (string)serverNode["url"]!,
-                (string)serverNode["sha1"]!,
-                (long?)serverNode["size"] ?? 0,
-                (int?)root?["javaVersion"]?["majorVersion"]);
+        var download = await mojang.GetServerDownloadAsync(version, cancellationToken);
 
         lock (_downloadCache) _downloadCache[versionId] = download;
         return download;
@@ -206,7 +168,8 @@ public sealed class UpdateService(
 
             Directory.CreateDirectory(current.ServerDirectory);
             SetProgress(Progress with { Stage = $"Downloading server {versionId}", TotalBytes = download.Size });
-            await DownloadAsync(download, tempPath, cancellationToken);
+            await mojang.DownloadAsync(download, tempPath,
+                (received, total) => SetProgress(Progress with { BytesDownloaded = received, TotalBytes = total }), cancellationToken);
 
             var wasRunning = server.IsRunning;
             var world = properties.LevelName;
@@ -319,40 +282,6 @@ public sealed class UpdateService(
         {
             try { File.Delete(Path.Combine(ArchiveDirectory, old.FileName)); }
             catch (IOException ex) { logger.LogWarning(ex, "Could not delete archived jar {File}", old.FileName); }
-        }
-    }
-
-    private async Task DownloadAsync(ServerDownload download, string destination, CancellationToken cancellationToken)
-    {
-        using var client = httpClientFactory.CreateClient(HttpClientName);
-        using var response = await client.GetAsync(download.Url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var total = response.Content.Headers.ContentLength ?? download.Size;
-
-        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await using (var target = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
-        {
-            using var sha1 = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
-            var buffer = new byte[81920];
-            long received = 0;
-            var stopwatch = Stopwatch.StartNew();
-            int read;
-            while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
-            {
-                await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                sha1.AppendData(buffer, 0, read);
-                received += read;
-                if (stopwatch.ElapsedMilliseconds > 250)
-                {
-                    stopwatch.Restart();
-                    SetProgress(Progress with { BytesDownloaded = received, TotalBytes = total });
-                }
-            }
-            SetProgress(Progress with { BytesDownloaded = received, TotalBytes = total });
-
-            var hash = Convert.ToHexStringLower(sha1.GetHashAndReset());
-            if (!string.Equals(hash, download.Sha1, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException($"The downloaded file failed SHA-1 verification (expected {download.Sha1}, got {hash}).");
         }
     }
 

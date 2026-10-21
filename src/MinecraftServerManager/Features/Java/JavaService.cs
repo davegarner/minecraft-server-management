@@ -3,7 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.Java;
 
 public sealed record JavaRuntimeInfo(string Path, int MajorVersion, string Version, string Description);
 

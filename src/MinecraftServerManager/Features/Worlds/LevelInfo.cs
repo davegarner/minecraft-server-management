@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.Worlds;
 
 /// <summary>Summary of a world's level.dat.</summary>
 public sealed record LevelInfo(string? LevelName, string? Version, long? Seed, int? GameType, bool Hardcore, DateTimeOffset? LastPlayed)

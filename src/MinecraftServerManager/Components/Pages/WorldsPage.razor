@@ -302,8 +302,8 @@ else
         var props = Properties.Load();
         _new = new NewWorldOptions
         {
-            Difficulty = props.Get("difficulty") ?? "easy",
-            GameMode = props.Get("gamemode") ?? "survival",
+            Difficulty = props.Get(ServerPropertyKeys.Difficulty) ?? "easy",
+            GameMode = props.Get(ServerPropertyKeys.GameMode) ?? "survival",
         };
         _createError = null;
         _showCreate = true;

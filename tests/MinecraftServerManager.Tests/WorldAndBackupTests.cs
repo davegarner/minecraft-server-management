@@ -1,5 +1,7 @@
 using System.IO.Compression;
-using MinecraftServerManager.Services;
+using MinecraftServerManager.Features.Backups;
+using MinecraftServerManager.Features.Server;
+using MinecraftServerManager.Features.Worlds;
 using MinecraftServerManager.Util;
 
 namespace MinecraftServerManager.Tests;

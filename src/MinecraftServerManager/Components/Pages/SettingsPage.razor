@@ -268,54 +268,17 @@
 
     private void Save()
     {
-        var error = Validate();
-        if (error is not null)
-        {
-            Toasts.Error(error);
-            return;
-        }
-
         try
         {
-            Directory.CreateDirectory(_model.ServerDirectory.Trim());
+            Settings.SaveServerSettings(_model);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (InvalidOperationException ex)
         {
-            Toasts.Error($"Can't create the server directory: {ex.Message}");
+            Toasts.Error(ex.Message);
             return;
         }
-
-        Settings.Update(s =>
-        {
-            s.ServerDirectory = Path.GetFullPath(_model.ServerDirectory.Trim());
-            s.JarFileName = _model.JarFileName.Trim();
-            s.BackupDirectory = string.IsNullOrWhiteSpace(_model.BackupDirectory) ? "" : Path.GetFullPath(_model.BackupDirectory.Trim());
-            s.JavaPath = _model.JavaPath.Trim();
-            s.MinMemoryMb = _model.MinMemoryMb;
-            s.MaxMemoryMb = _model.MaxMemoryMb;
-            s.JvmArguments = _model.JvmArguments.Trim();
-            s.ServerArguments = _model.ServerArguments.Trim();
-            s.AutoStartServer = _model.AutoStartServer;
-            s.AutoRestartOnCrash = _model.AutoRestartOnCrash;
-            s.StopTimeoutSeconds = _model.StopTimeoutSeconds;
-        });
         _model = Settings.Current.Clone();
         Toasts.Success(Server.IsRunning ? "Settings saved. Restart the server to apply them." : "Settings saved.");
-    }
-
-    private string? Validate()
-    {
-        if (!Path.IsPathFullyQualified(_model.ServerDirectory.Trim())) return "The server directory must be a full path, e.g. C:\\MinecraftServer.";
-        if (!string.IsNullOrWhiteSpace(_model.BackupDirectory) && !Path.IsPathFullyQualified(_model.BackupDirectory.Trim()))
-            return "The backup directory must be a full path.";
-        var jar = _model.JarFileName.Trim();
-        if (jar.Length == 0 || jar != Path.GetFileName(jar) || !jar.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))
-            return "The jar file name must be a plain file name ending in .jar.";
-        if (string.IsNullOrWhiteSpace(_model.JavaPath)) return "Enter the path to Java.";
-        if (_model.MaxMemoryMb < 512) return "Give the server at least 512 MB of memory.";
-        if (_model.MinMemoryMb < 0 || _model.MinMemoryMb > _model.MaxMemoryMb) return "The minimum heap can't be larger than the maximum heap.";
-        if (_model.StopTimeoutSeconds is < 5 or > 600) return "The stop timeout must be between 5 and 600 seconds.";
-        return null;
     }
 
     private void ChangePassword()

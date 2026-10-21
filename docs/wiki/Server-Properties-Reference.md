@@ -1,6 +1,6 @@
 # Server Properties Reference
 
-Every `server.properties` key the panel recognises, grouped the way the [Server Properties](Server-Properties) page groups them. This table is generated from the panel's property schema (`Services/PropertySchema.cs`).
+Every `server.properties` key the panel recognises, grouped the way the [Server Properties](Server-Properties) page groups them. This table is generated from the panel's property schema (`Features/ServerProperties/PropertySchema.cs`).
 
 Keys that aren't listed here (added by newer Minecraft versions or by mods) still appear in the editor under **Other** and can be edited as plain text. Most changes take effect the next time the server starts.
 

@@ -1,6 +1,7 @@
+using MinecraftServerManager.Features.Settings;
 using MinecraftServerManager.Util;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.ServerProperties;
 
 /// <summary>Reads and writes server.properties and eula.txt in the server directory.</summary>
 public sealed class ServerPropertiesService(SettingsService settings, ILogger<ServerPropertiesService> logger)
@@ -20,7 +21,7 @@ public sealed class ServerPropertiesService(SettingsService settings, ILogger<Se
     public string? Get(string key) => Load().Get(key);
 
     /// <summary>The world folder the server loads (level-name), defaulting to "world".</summary>
-    public string LevelName => Get("level-name") is { Length: > 0 } name ? name : "world";
+    public string LevelName => Get(ServerPropertyKeys.LevelName) is { Length: > 0 } name ? name : "world";
 
     /// <summary>Sets and removes keys, preserving everything else in the file.</summary>
     public void Update(IReadOnlyDictionary<string, string> values, IEnumerable<string>? removeKeys = null)

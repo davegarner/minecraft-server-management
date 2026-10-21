@@ -1,14 +1,17 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
+using MinecraftServerManager.Core;
+using MinecraftServerManager.Features.Server;
+using MinecraftServerManager.Features.ServerProperties;
+using MinecraftServerManager.Features.Settings;
+using MinecraftServerManager.Infrastructure.Mojang;
 using MinecraftServerManager.Util;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.Players;
 
 public sealed record PlayerEntry(string Name, string? Uuid, int? Level = null, string? Reason = null, string? Created = null, string? Expires = null);
 
@@ -18,11 +21,11 @@ public sealed record IpBanEntry(string Ip, string? Reason, string? Created, stri
 /// Manages operators, the whitelist and bans. While the server is running changes are sent as console commands
 /// (the server owns the JSON files and would overwrite direct edits); while stopped the JSON files are edited directly.
 /// </summary>
-public sealed partial class PlayerService(
+public sealed class PlayerService(
     SettingsService settings,
     ServerProcessService server,
     ServerPropertiesService properties,
-    IHttpClientFactory httpClientFactory,
+    MojangClient mojang,
     ILogger<PlayerService> logger)
 {
     private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
@@ -33,7 +36,17 @@ public sealed partial class PlayerService(
     private const string BannedPlayersFile = "banned-players.json";
     private const string BannedIpsFile = "banned-ips.json";
 
-    public static bool IsValidName(string? name) => name is not null && NameRegex().IsMatch(name);
+    public bool IsWhitelistEnabled => properties.Get(ServerPropertyKeys.WhiteList) == "true";
+
+    /// <summary>The permission level new operators get (op-permission-level, 4 if unset).</summary>
+    public string OperatorPermissionLevel => properties.Get(ServerPropertyKeys.OpPermissionLevel) ?? "4";
+
+    /// <summary>Turns the whitelist on or off in server.properties and, if the server is running, applies it immediately.</summary>
+    public async Task SetWhitelistEnabledAsync(bool enabled)
+    {
+        properties.Update(new Dictionary<string, string> { [ServerPropertyKeys.WhiteList] = enabled ? "true" : "false" });
+        if (server.State == ServerState.Running) await server.SendCommandAsync(enabled ? "whitelist on" : "whitelist off");
+    }
 
     public IReadOnlyList<PlayerEntry> GetOperators() =>
         ReadArray(OpsFile).Select(n => new PlayerEntry(Str(n, "name") ?? "?", Str(n, "uuid"), Level: n?["level"] is JsonValue level && level.TryGetValue<int>(out var l) ? l : null)).ToList();
@@ -52,7 +65,7 @@ public sealed partial class PlayerService(
     public Task AddOperatorAsync(string name) => ApplyAsync(name, $"op {name}", async () =>
     {
         var (uuid, properName) = await ResolveProfileAsync(name);
-        var level = int.TryParse(properties.Get("op-permission-level"), out var l) ? l : 4;
+        var level = int.TryParse(properties.Get(ServerPropertyKeys.OpPermissionLevel), out var l) ? l : 4;
         Upsert(OpsFile, "uuid", uuid, new JsonObject
         {
             ["uuid"] = uuid, ["name"] = properName, ["level"] = level, ["bypassesPlayerLimit"] = false,
@@ -146,17 +159,12 @@ public sealed partial class PlayerService(
 
     private async Task<(string Uuid, string Name)> ResolveProfileAsync(string name)
     {
-        if (string.Equals(properties.Get("online-mode"), "false", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(properties.Get(ServerPropertyKeys.OnlineMode), "false", StringComparison.OrdinalIgnoreCase))
             return (OfflineUuid(name), name);
 
-        using var client = httpClientFactory.CreateClient(UpdateService.HttpClientName);
-        using var response = await client.GetAsync($"https://api.mojang.com/users/profiles/minecraft/{Uri.EscapeDataString(name)}");
-        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.NoContent)
-            throw new InvalidOperationException($"No Minecraft account named '{name}' exists.");
-        response.EnsureSuccessStatusCode();
-        var profile = await response.Content.ReadFromJsonAsync<JsonObject>()
-            ?? throw new InvalidOperationException("Unexpected response from the Mojang API.");
-        return (FormatUuid((string)profile["id"]!), (string?)profile["name"] ?? name);
+        var profile = await mojang.FindProfileAsync(name)
+            ?? throw new InvalidOperationException($"No Minecraft account named '{name}' exists.");
+        return (FormatUuid(profile.Id), profile.Name);
     }
 
     private JsonArray ReadArray(string fileName)
@@ -201,7 +209,7 @@ public sealed partial class PlayerService(
 
     private static void EnsureValidName(string name)
     {
-        if (!IsValidName(name)) throw new ArgumentException("Player names are 1-16 characters: letters, numbers and underscores.");
+        if (!PlayerName.IsValid(name)) throw new ArgumentException("Player names are 1-16 characters: letters, numbers and underscores.");
     }
 
     private static string? CleanReason(string? reason)
@@ -224,7 +232,4 @@ public sealed partial class PlayerService(
         var sign = offset < TimeSpan.Zero ? "-" : "+";
         return now.ToString("yyyy-MM-dd HH:mm:ss ", CultureInfo.InvariantCulture) + $"{sign}{Math.Abs(offset.Hours):00}{Math.Abs(offset.Minutes):00}";
     }
-
-    [GeneratedRegex("^[A-Za-z0-9_]{1,16}$")]
-    private static partial Regex NameRegex();
 }

@@ -5,7 +5,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
-using MinecraftServerManager.Services;
+using MinecraftServerManager.Features.Backups;
+using MinecraftServerManager.Features.Server;
+using MinecraftServerManager.Features.ServerProperties;
+using MinecraftServerManager.Features.Settings;
+using MinecraftServerManager.Features.Worlds;
 
 namespace MinecraftServerManager.Tests;
 

@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Core;
 
 /// <summary>Naming and layout rules for world folders inside the server directory.</summary>
 public static partial class WorldFolders

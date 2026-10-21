@@ -45,23 +45,53 @@ flowchart LR
     Services -- files --> Disk[("Server directory<br/>data folder<br/>backups")]
 ```
 
+## Layers
+
+The code is one project (one self-contained executable), organised by feature, with dependencies that only point one way:
+
+```mermaid
+flowchart TD
+    UI["Components (Razor pages)<br/>Endpoints"] --> Features
+    Host["Hosting (composition root)"] --> Features
+    subgraph Features["Features/* (arrows: uses; indirect uses omitted)"]
+        direction LR
+        Updates --> Backups
+        Updates --> Java
+        Worlds --> Backups
+        Backups --> Server
+        Players --> Server
+        Server --> ServerProperties --> Settings
+        Auth --> Settings
+    end
+    Features --> Infrastructure["Infrastructure<br/>(Mojang API, Windows job objects)"]
+    Features --> Core["Core<br/>(shared rules: world folders, player names)"]
+    Features --> Util
+```
+
+- **Features** own the behaviour and state of one area each (server process, worlds, backups and so on). A feature may use a feature *below* it, never one above it, so there are no cycles.
+- **Core** holds rules used by more than one feature. **Infrastructure** talks to the outside world (Mojang's HTTP APIs, Win32). **Util** holds small technical helpers. None of these depend on features.
+- **Components** render and orchestrate. Business rules, validation and anything that changes the server live in a feature service, where they can be tested without a browser.
+- `ArchitectureTests` in the test project enforces these rules by reading the compiled code, including method bodies, so a violation fails the build's tests.
+
 ## Services
 
-All services are **singletons** registered in `Program.cs`; UI components inject them and subscribe to their events.
+All services are **singletons** registered in `Hosting/ServiceRegistration.cs`; UI components inject them and subscribe to their events.
 
 | Service | Responsibility |
 | --- | --- |
-| `SettingsService` | Loads/saves `data/settings.json`. `Current` is an immutable snapshot; changes go through `Update(mutate)`, which clones, applies, writes atomically and swaps. Raises `Changed`. |
+| `SettingsService` | Loads/saves `data/settings.json`. `Current` is an immutable snapshot; changes go through `Update(mutate)`, which clones, applies, writes atomically and swaps. Validates and saves the launch settings. Raises `Changed`. |
 | `AuthService` | PBKDF2 hashing, credential checks, per-IP lockout, setup and password change, and the *security stamp* claim that invalidates cookies when credentials change. |
-| `ServerPropertiesService` | Reads/writes `server.properties` and `eula.txt` through `JavaPropertiesDocument` (a `java.util.Properties`-compatible parser/writer that preserves comments and order). |
-| `ServerProcessService` | Owns the Java process: start/stop/restart/kill, stdin commands, stdout/stderr pumping, a 3,000-line console ring buffer, player tracking from log lines, CPU/memory sampling, crash auto-restart. Also an `IHostedService` for auto-start and clean shutdown. |
+| `ServerPropertiesService` | Reads/writes `server.properties` and `eula.txt` through `JavaPropertiesDocument` (a `java.util.Properties`-compatible parser/writer that preserves comments and order). Keys the manager uses itself are in `ServerPropertyKeys`. |
+| `ServerProcessService` | Owns the Java process: start/stop/restart/kill, stdin commands, stdout/stderr pumping and CPU/memory sampling. It delegates to `ConsoleBuffer` (3,000-line ring buffer), `ServerLogParser` (startup, join, leave and `list` lines), `OnlinePlayerList` and `CrashRestartPolicy` (at most 3 automatic restarts in 10 minutes). |
+| `ServerLifetimeService` | `IHostedService` that auto-starts the server with the host and stops it cleanly on shutdown. |
 | `JavaService` | Runs `java -version` (cached for a minute) and searches standard locations for runtimes. |
 | `WorldService` | Lists worlds (reading `level.dat` with a small NBT reader), creates/switches/deletes/imports worlds. |
 | `BackupService` | Creates zip backups (with `save-off`/`save-all flush`/`save-on` for the live world), restores with rollback, applies retention, exposes progress. A semaphore ensures one backup/restore at a time. |
 | `BackupScheduler` | `BackgroundService` that checks every minute whether a scheduled backup is due. |
-| `UpdateService` | Fetches and caches Mojang's manifest, resolves server downloads and Java requirements, downloads with SHA-1 verification, swaps and archives jars, and rolls back. |
-| `PlayerService` | Ops, whitelist and bans, via console commands (running) or JSON files (stopped), with Mojang/offline UUID resolution. |
-| `ToastService` | **Scoped** (one per browser circuit) notification queue for the UI. |
+| `UpdateService` | Caches Mojang's manifest, resolves server downloads and Java requirements, swaps and archives jars, and rolls back. |
+| `PlayerService` | Ops, whitelist (including switching it on and off) and bans, via console commands (running) or JSON files (stopped), with Mojang/offline UUID resolution. |
+| `MojangClient` | Infrastructure: Mojang's version manifest, per-version downloads (streamed, SHA-1 verified) and profile lookups. |
+| `ToastService` | UI (`Components/Shared`): **scoped**, one notification queue per browser circuit. |
 
 ## Server process lifecycle
 
@@ -152,18 +182,31 @@ Progress is published as an immutable `UpdateProgress` record, which is also how
 
 ```text
 src/MinecraftServerManager/
-  Program.cs                       Host, DI, auth, endpoints
-  Services/                        All services listed above, plus JavaPropertiesDocument,
-                                   PropertySchema, LevelInfo/NbtReader, WorldFolders,
-                                   WindowsJobObject, ManagerSettings
+  Program.cs                       Host, auth, middleware, endpoints
+  Features/                        One folder (and namespace) per area:
+    Auth/                          AuthService
+    Backups/                       BackupService, BackupScheduler
+    Java/                          JavaService
+    Players/                       PlayerService
+    Server/                        ServerProcessService, ServerLifetimeService, ConsoleBuffer,
+                                   ServerLogParser, OnlinePlayerList, CrashRestartPolicy
+    ServerProperties/              ServerPropertiesService, JavaPropertiesDocument, PropertySchema,
+                                   ServerPropertyKeys
+    Settings/                      SettingsService, ManagerSettings
+    Updates/                       UpdateService
+    Worlds/                        WorldService, LevelInfo/NbtReader
+  Core/                            Rules shared by features: WorldFolders, PlayerName
+  Infrastructure/                  MojangClient (Mojang/), WindowsJobObject
   Endpoints/ManagerEndpoints.cs    /logout, /api/backups/{file}, /api/worlds/import
-  Hosting/MachineConfiguration.cs  The configure command used by the installers
+  Hosting/
+    ServiceRegistration.cs         The composition root: every service and its lifetime
+    MachineConfiguration.cs        The configure command used by the installers
   Components/
     App.razor, Routes.razor        Root and router (render-mode selection, auth routing)
     Layout/                        MainLayout (sidebar/top bar), AuthLayout, ReconnectModal
     Account/                       Login, Setup, RedirectToLogin
     Pages/                         One component per page
-    Shared/                        Icon, StatusPill, ServerControls, ConfirmDialog, Toasts, ConsoleStyles
+    Shared/                        Icon, StatusPill, ServerControls, ConfirmDialog, Toasts, ToastService, ConsoleStyles
   Util/                            Fmt, CommandLine, FileUtil, EventHelper
   wwwroot/                         app.css, app.js, favicon.svg
 tests/MinecraftServerManager.Tests xUnit unit and integration tests

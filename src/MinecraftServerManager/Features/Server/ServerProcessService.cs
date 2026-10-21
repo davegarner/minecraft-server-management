@@ -1,22 +1,20 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
-using System.Text.RegularExpressions;
+using MinecraftServerManager.Features.ServerProperties;
+using MinecraftServerManager.Features.Settings;
+using MinecraftServerManager.Infrastructure;
 using MinecraftServerManager.Util;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.Server;
 
 public enum ServerState { Stopped, Starting, Running, Stopping, Crashed }
 
-public enum ConsoleLineKind { Output, Error, Command, Manager }
-
-public sealed record ConsoleLine(long Id, string Text, ConsoleLineKind Kind);
-
 /// <summary>
-/// Owns the Minecraft server Java process: start/stop/restart, console input and output,
-/// online player tracking, crash auto-restart and CPU/memory sampling.
+/// Owns the Minecraft server Java process: start/stop/restart, console input and output, and CPU/memory sampling.
+/// Console storage, log parsing, player tracking and the crash-restart policy live in their own small classes.
 /// </summary>
-public sealed partial class ServerProcessService : IHostedService, IDisposable
+public sealed class ServerProcessService : IDisposable
 {
     private const int MaxConsoleLines = 3000;
     private const int MaxAutoRestarts = 3;
@@ -29,19 +27,15 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
     private readonly ILogger<ServerProcessService> _logger;
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly SemaphoreSlim _stdin = new(1, 1);
-    private readonly Lock _consoleLock = new();
-    // Ring buffer: the line with id N lives at index N % MaxConsoleLines, so readers can copy just the lines they need.
-    private readonly ConsoleLine[] _console = new ConsoleLine[MaxConsoleLines];
-    private readonly HashSet<string> _players = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<DateTimeOffset> _recentCrashes = [];
+    private readonly ConsoleBuffer _console = new(MaxConsoleLines);
+    private readonly OnlinePlayerList _players = new();
+    private readonly CrashRestartPolicy _crashes = new(MaxAutoRestarts, AutoRestartWindow);
     private readonly Timer _statsTimer;
 
     private Process? _process;
     private Task _exitMonitor = Task.CompletedTask;
     private IDisposable? _job;
     private volatile bool _stopRequested;
-    private volatile IReadOnlyList<string> _onlinePlayers = [];
-    private long _lastLineId;
     private TimeSpan _lastCpuTime;
     private DateTimeOffset _lastCpuSample;
 
@@ -66,10 +60,10 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
     public TimeSpan? Uptime => StartedAt is { } started ? DateTimeOffset.Now - started : null;
 
     /// <summary>Sorted snapshot, rebuilt only when players join or leave (pages read it on every render).</summary>
-    public IReadOnlyList<string> OnlinePlayers => _onlinePlayers;
+    public IReadOnlyList<string> OnlinePlayers => _players.Snapshot;
 
     /// <summary>Id of the newest console line, or 0 if there is none. Ids increase by one per line.</summary>
-    public long LastLineId => Volatile.Read(ref _lastLineId);
+    public long LastLineId => _console.LastId;
 
     public event Action? StateChanged;
     public event Action? PlayersChanged;
@@ -80,17 +74,8 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
     /// Returns the newest buffered lines with an id greater than <paramref name="afterId"/>, oldest first and at most
     /// <paramref name="maxCount"/> of them. Only the returned lines are copied, so polling for new output stays cheap.
     /// </summary>
-    public IReadOnlyList<ConsoleLine> GetConsoleLines(long afterId = 0, int maxCount = MaxConsoleLines)
-    {
-        lock (_consoleLock)
-        {
-            var first = Math.Max(Math.Max(afterId, _lastLineId - MaxConsoleLines) + 1, _lastLineId - maxCount + 1);
-            if (first > _lastLineId) return [];
-            var lines = new ConsoleLine[_lastLineId - first + 1];
-            for (var i = 0; i < lines.Length; i++) lines[i] = _console[(int)((first + i) % MaxConsoleLines)];
-            return lines;
-        }
-    }
+    public IReadOnlyList<ConsoleLine> GetConsoleLines(long afterId = 0, int maxCount = MaxConsoleLines) =>
+        _console.GetLines(afterId, maxCount);
 
     public async Task StartServerAsync(CancellationToken cancellationToken = default)
     {
@@ -228,11 +213,7 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
         if (OperatingSystem.IsWindows()) _job = WindowsJobObject.TryAttach(process, _logger);
 
         _stopRequested = false;
-        lock (_players)
-        {
-            _players.Clear();
-            _onlinePlayers = [];
-        }
+        _players.Clear();
         _process = process;
         ProcessId = process.Id;
         StartedAt = DateTimeOffset.Now;
@@ -313,7 +294,11 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
         CpuPercent = 0;
         MemoryBytes = 0;
         LastExitCode = exitCode;
-        if (_onlinePlayers.Count > 0) UpdatePlayers(players => players.Clear());
+        if (_players.Snapshot.Count > 0)
+        {
+            _players.Clear();
+            EventHelper.Raise(PlayersChanged, _logger);
+        }
 
         AddManagerLine(crashed
             ? $"Server process exited unexpectedly (exit code {exitCode})."
@@ -327,17 +312,9 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
 
     private async Task AutoRestartAsync()
     {
-        int recent;
-        lock (_recentCrashes)
+        if (!_crashes.ShouldRestart(DateTimeOffset.Now, out var recent))
         {
-            var now = DateTimeOffset.Now;
-            _recentCrashes.Add(now);
-            _recentCrashes.RemoveAll(t => now - t > AutoRestartWindow);
-            recent = _recentCrashes.Count;
-        }
-        if (recent > MaxAutoRestarts)
-        {
-            AddManagerLine($"The server crashed {recent} times within {AutoRestartWindow.TotalMinutes:0} minutes. Automatic restart is paused; start it manually after fixing the problem.");
+            AddManagerLine($"The server crashed {recent} times within {_crashes.Window.TotalMinutes:0} minutes. Automatic restart is paused; start it manually after fixing the problem.");
             return;
         }
 
@@ -369,59 +346,26 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
 
     private void HandleOutputLine(string raw, ConsoleLineKind kind)
     {
-        var text = AnsiEscapeRegex().Replace(raw, string.Empty);
+        var text = ServerLogParser.StripAnsi(raw);
         AddLine(text, kind);
 
-        if (State == ServerState.Starting && DoneRegex().IsMatch(text))
+        if (State == ServerState.Starting && ServerLogParser.IsStartupComplete(text))
         {
             SetState(ServerState.Running);
             return;
         }
 
-        if (JoinRegex().Match(text) is { Success: true } join)
+        if (ServerLogParser.ParsePlayerEvent(text) is { } playerEvent)
         {
-            var name = join.Groups["name"].Value;
-            UpdatePlayers(players => players.Add(name));
-        }
-        else if (LeaveRegex().Match(text) is { Success: true } leave)
-        {
-            var name = leave.Groups["name"].Value;
-            UpdatePlayers(players => players.Remove(name));
-        }
-        else if (ListRegex().Match(text) is { Success: true } list)
-        {
-            // Output of the "list" command: resynchronise with the authoritative player list.
-            var names = list.Groups["names"].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            UpdatePlayers(players =>
-            {
-                players.Clear();
-                foreach (var name in names)
-                    if (PlayerService.IsValidName(name)) players.Add(name);
-            });
+            _players.Apply(playerEvent);
+            EventHelper.Raise(PlayersChanged, _logger);
         }
     }
 
-    private void UpdatePlayers(Action<HashSet<string>> change)
+    private void AddLine(string text, ConsoleLineKind kind)
     {
-        lock (_players)
-        {
-            change(_players);
-            _onlinePlayers = _players.Order(StringComparer.OrdinalIgnoreCase).ToArray();
-        }
-        EventHelper.Raise(PlayersChanged, _logger);
-    }
-
-    private ConsoleLine AddLine(string text, ConsoleLineKind kind)
-    {
-        ConsoleLine line;
-        lock (_consoleLock)
-        {
-            line = new ConsoleLine(_lastLineId + 1, text, kind);
-            _console[(int)(line.Id % MaxConsoleLines)] = line;
-            Volatile.Write(ref _lastLineId, line.Id);
-        }
+        var line = _console.Append(text, kind);
         EventHelper.Raise(LineReceived, line, _logger);
-        return line;
     }
 
     private void SetState(ServerState state)
@@ -477,53 +421,10 @@ public sealed partial class ServerProcessService : IHostedService, IDisposable
         }
     }
 
-    Task IHostedService.StartAsync(CancellationToken cancellationToken)
-    {
-        if (_settings.Current.AutoStartServer)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    AddManagerLine("Auto-start is enabled; starting the server.");
-                    await StartServerAsync();
-                }
-                catch (Exception ex)
-                {
-                    AddManagerLine($"Auto-start failed: {ex.Message}");
-                    _logger.LogWarning(ex, "Auto-start failed");
-                }
-            }, CancellationToken.None);
-        }
-        return Task.CompletedTask;
-    }
-
-    async Task IHostedService.StopAsync(CancellationToken cancellationToken)
-    {
-        if (_process is null) return;
-        _logger.LogInformation("Manager is shutting down; stopping the Minecraft server gracefully");
-        await StopServerAsync(cancellationToken);
-    }
-
     public void Dispose()
     {
         _statsTimer.Dispose();
         if (_process is { } process) TryKill(process);
         _job?.Dispose();
     }
-
-    [GeneratedRegex(@"\x1B\[[0-9;?]*[A-Za-z]")]
-    private static partial Regex AnsiEscapeRegex();
-
-    [GeneratedRegex(@"\]: Done \([0-9.,]+s\)!")]
-    private static partial Regex DoneRegex();
-
-    [GeneratedRegex(@"\]: (?<name>[A-Za-z0-9_]{1,16})(?: \(formerly known as [A-Za-z0-9_]{1,16}\))? joined the game$")]
-    private static partial Regex JoinRegex();
-
-    [GeneratedRegex(@"\]: (?<name>[A-Za-z0-9_]{1,16}) left the game$")]
-    private static partial Regex LeaveRegex();
-
-    [GeneratedRegex(@"\]: There are \d+ of a max of \d+ players online:(?<names>.*)$")]
-    private static partial Regex ListRegex();
 }

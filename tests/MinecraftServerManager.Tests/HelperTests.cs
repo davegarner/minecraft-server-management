@@ -1,5 +1,11 @@
 using System.Globalization;
-using MinecraftServerManager.Services;
+using MinecraftServerManager.Core;
+using MinecraftServerManager.Features.Auth;
+using MinecraftServerManager.Features.Java;
+using MinecraftServerManager.Features.Players;
+using MinecraftServerManager.Features.Server;
+using MinecraftServerManager.Features.ServerProperties;
+using MinecraftServerManager.Features.Settings;
 using MinecraftServerManager.Util;
 
 namespace MinecraftServerManager.Tests;
@@ -75,10 +81,10 @@ public class HelperTests
     {
         // Matches Java's UUID.nameUUIDFromBytes("OfflinePlayer:Notch").
         Assert.Equal("b50ad385-829d-3141-a216-7e7d7539ba7f", PlayerService.OfflineUuid("Notch"));
-        Assert.True(PlayerService.IsValidName("Steve_123"));
-        Assert.False(PlayerService.IsValidName("has space"));
-        Assert.False(PlayerService.IsValidName("op Steve\nstop"));
-        Assert.False(PlayerService.IsValidName("seventeen_chars_x"));
+        Assert.True(PlayerName.IsValid("Steve_123"));
+        Assert.False(PlayerName.IsValid("has space"));
+        Assert.False(PlayerName.IsValid("op Steve\nstop"));
+        Assert.False(PlayerName.IsValid("seventeen_chars_x"));
     }
 
     [Fact]

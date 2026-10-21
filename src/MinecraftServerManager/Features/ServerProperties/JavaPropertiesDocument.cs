@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using MinecraftServerManager.Util;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.ServerProperties;
 
 /// <summary>
 /// Reads and writes Java <c>.properties</c> files (server.properties, eula.txt) following the

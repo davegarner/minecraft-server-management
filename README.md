@@ -143,12 +143,14 @@ dotnet test                                          # unit + integration tests
 
 ```
 src/MinecraftServerManager/
-  Program.cs                 Host setup: Windows service, auth, DI, endpoints
-  Services/                  Server process, properties, worlds, backups, updates, players, auth, Java detection
+  Program.cs                 Host setup: Windows service, auth, endpoints
+  Features/                  One folder per area: server process, properties, worlds, backups, updates, players, auth, Java detection
+  Core/                      Rules shared by features (world folder and player name rules)
+  Infrastructure/            Mojang API client, Windows job objects
   Components/Pages/          Dashboard, Console, Properties, Worlds, Backups, Updates, Players, Settings
   Components/Account/        Sign-in and first-run setup (static server-rendered)
   Endpoints/                 Backup downloads, world uploads, sign-out
-  Hosting/                   The configure command used by the installers
+  Hosting/                   Service registration and the configure command used by the installers
   wwwroot/                   Styles and small JS helpers
 installer/                   Setup wizard (Inno Setup), MSI (WiX), installer tests, release notes template
 scripts/                     build-release, publish, install-service, uninstall-service

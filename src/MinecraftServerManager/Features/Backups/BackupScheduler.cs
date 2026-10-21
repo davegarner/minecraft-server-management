@@ -1,4 +1,9 @@
-namespace MinecraftServerManager.Services;
+using MinecraftServerManager.Core;
+using MinecraftServerManager.Features.Server;
+using MinecraftServerManager.Features.ServerProperties;
+using MinecraftServerManager.Features.Settings;
+
+namespace MinecraftServerManager.Features.Backups;
 
 /// <summary>Takes a backup of the active world at the configured interval.</summary>
 public sealed class BackupScheduler(

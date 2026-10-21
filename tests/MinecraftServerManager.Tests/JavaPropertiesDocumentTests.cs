@@ -1,4 +1,4 @@
-using MinecraftServerManager.Services;
+using MinecraftServerManager.Features.ServerProperties;
 
 namespace MinecraftServerManager.Tests;
 

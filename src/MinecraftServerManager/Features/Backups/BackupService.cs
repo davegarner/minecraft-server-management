@@ -2,9 +2,13 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
+using MinecraftServerManager.Core;
+using MinecraftServerManager.Features.Server;
+using MinecraftServerManager.Features.ServerProperties;
+using MinecraftServerManager.Features.Settings;
 using MinecraftServerManager.Util;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.Backups;
 
 public enum BackupKind { Manual, Scheduled, PreUpdate, PreRestore, PreDelete }
 

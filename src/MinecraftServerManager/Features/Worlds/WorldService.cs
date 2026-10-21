@@ -1,9 +1,14 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text.Json;
+using MinecraftServerManager.Core;
+using MinecraftServerManager.Features.Backups;
+using MinecraftServerManager.Features.Server;
+using MinecraftServerManager.Features.ServerProperties;
+using MinecraftServerManager.Features.Settings;
 using MinecraftServerManager.Util;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.Worlds;
 
 public sealed record WorldInfo(string Name, string Path, long SizeBytes, DateTime LastModified, bool IsActive, LevelInfo? Level);
 
@@ -102,14 +107,14 @@ public sealed class WorldService(
 
         var values = new Dictionary<string, string>
         {
-            ["level-name"] = name,
-            ["level-seed"] = options.Seed.Trim(),
-            ["level-type"] = options.LevelType,
-            ["generator-settings"] = generatorSettings,
-            ["generate-structures"] = options.GenerateStructures ? "true" : "false",
-            ["hardcore"] = options.Hardcore ? "true" : "false",
-            ["difficulty"] = options.Hardcore ? "hard" : options.Difficulty,
-            ["gamemode"] = options.GameMode,
+            [ServerPropertyKeys.LevelName] = name,
+            [ServerPropertyKeys.LevelSeed] = options.Seed.Trim(),
+            [ServerPropertyKeys.LevelType] = options.LevelType,
+            [ServerPropertyKeys.GeneratorSettings] = generatorSettings,
+            [ServerPropertyKeys.GenerateStructures] = options.GenerateStructures ? "true" : "false",
+            [ServerPropertyKeys.Hardcore] = options.Hardcore ? "true" : "false",
+            [ServerPropertyKeys.Difficulty] = options.Hardcore ? "hard" : options.Difficulty,
+            [ServerPropertyKeys.GameMode] = options.GameMode,
         };
 
         var restart = options.StartServer && server.IsRunning;
@@ -126,7 +131,7 @@ public sealed class WorldService(
         if (!WorldExists(name)) throw new InvalidOperationException($"World '{name}' was not found.");
         var restart = restartIfRunning && server.IsRunning;
         if (restart) await server.StopServerAsync();
-        properties.Update(new Dictionary<string, string> { ["level-name"] = name });
+        properties.Update(new Dictionary<string, string> { [ServerPropertyKeys.LevelName] = name });
         server.AddManagerLine($"Active world set to '{name}'.");
         if (restart) await server.StartServerAsync();
     }

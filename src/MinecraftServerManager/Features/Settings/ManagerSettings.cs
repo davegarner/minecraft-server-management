@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.Settings;
 
 /// <summary>Persistent manager configuration, stored as JSON in the data directory.</summary>
 public sealed class ManagerSettings

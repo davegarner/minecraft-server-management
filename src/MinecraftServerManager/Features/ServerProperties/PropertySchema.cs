@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.ServerProperties;
 
 public enum PropertyKind { Text, Boolean, Integer, Choice, Password, Json }
 

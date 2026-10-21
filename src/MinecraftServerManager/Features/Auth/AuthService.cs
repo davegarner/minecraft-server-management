@@ -1,10 +1,11 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.AspNetCore.Authentication.Cookies;
+using MinecraftServerManager.Features.Settings;
 
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Features.Auth;
 
 /// <summary>Single-admin authentication: PBKDF2 password hashing and brute-force lockout.</summary>
 public sealed class AuthService(SettingsService settings)

@@ -2,7 +2,6 @@
 @implements IDisposable
 @inject PlayerService Players
 @inject ServerProcessService Server
-@inject ServerPropertiesService Properties
 @inject ToastService Toasts
 
 <PageTitle>Players · Minecraft Server Manager</PageTitle>
@@ -63,10 +62,10 @@
     @switch (_tab)
     {
         case "ops":
-            <p class="muted small">Operators can run commands in game. Their permission level comes from <span class="mono">op-permission-level</span> (currently @(Properties.Get("op-permission-level") ?? "4")).</p>
+            <p class="muted small">Operators can run commands in game. Their permission level comes from <span class="mono">op-permission-level</span> (currently @Players.OperatorPermissionLevel).</p>
             <form class="form-inline" @onsubmit="AddOpAsync">
                 <input class="input" placeholder="Player name" @bind="_name" @bind:event="oninput" maxlength="16" aria-label="Player name" />
-                <button class="btn btn-primary" type="submit" disabled="@(!PlayerService.IsValidName(_name) || _busy)"><Icon Name="plus" /> Add operator</button>
+                <button class="btn btn-primary" type="submit" disabled="@(!PlayerName.IsValid(_name) || _busy)"><Icon Name="plus" /> Add operator</button>
             </form>
             @RenderPlayers(_ops, "No operators yet.", p => RunAsync(() => Players.RemoveOperatorAsync(p.Name), $"{p.Name} is no longer an operator."), "Remove")
             break;
@@ -81,7 +80,7 @@
             </div>
             <form class="form-inline" @onsubmit="AddWhitelistAsync">
                 <input class="input" placeholder="Player name" @bind="_name" @bind:event="oninput" maxlength="16" aria-label="Player name" />
-                <button class="btn btn-primary" type="submit" disabled="@(!PlayerService.IsValidName(_name) || _busy)"><Icon Name="plus" /> Add to whitelist</button>
+                <button class="btn btn-primary" type="submit" disabled="@(!PlayerName.IsValid(_name) || _busy)"><Icon Name="plus" /> Add to whitelist</button>
             </form>
             @RenderPlayers(_whitelist, "The whitelist is empty.", p => RunAsync(() => Players.RemoveFromWhitelistAsync(p.Name), $"{p.Name} removed from the whitelist."), "Remove")
             break;
@@ -90,7 +89,7 @@
             <form class="form-inline" @onsubmit="AddBanAsync">
                 <input class="input" placeholder="Player name" @bind="_name" @bind:event="oninput" maxlength="16" aria-label="Player name" />
                 <input class="input grow" placeholder="Reason (optional)" @bind="_reason" @bind:event="oninput" aria-label="Ban reason" />
-                <button class="btn btn-danger" type="submit" disabled="@(!PlayerService.IsValidName(_name) || _busy)"><Icon Name="ban" /> Ban player</button>
+                <button class="btn btn-danger" type="submit" disabled="@(!PlayerName.IsValid(_name) || _busy)"><Icon Name="ban" /> Ban player</button>
             </form>
             @RenderPlayers(_bans, "No banned players.", p => RunAsync(() => Players.PardonAsync(p.Name), $"{p.Name} has been pardoned."), "Pardon")
             break;
@@ -164,7 +163,7 @@
         _whitelist = Players.GetWhitelist().ToList();
         _bans = Players.GetBannedPlayers().ToList();
         _ipBans = Players.GetBannedIps().ToList();
-        _whitelistEnabled = Properties.Get("white-list") == "true";
+        _whitelistEnabled = Players.IsWhitelistEnabled;
     }
 
     private RenderFragment RenderPlayers(List<PlayerEntry> players, string emptyText, Func<PlayerEntry, Task> remove, string removeLabel) => __builder =>
@@ -211,12 +210,8 @@
     private async Task SetWhitelistAsync(bool enabled)
     {
         _whitelistEnabled = enabled;
-        Properties.Update(new Dictionary<string, string> { ["white-list"] = enabled ? "true" : "false" });
-        if (Server.State == ServerState.Running)
-        {
-            try { await Server.SendCommandAsync(enabled ? "whitelist on" : "whitelist off"); }
-            catch (Exception ex) { Toasts.Error(ex.Message); }
-        }
+        try { await Players.SetWhitelistEnabledAsync(enabled); }
+        catch (Exception ex) { Toasts.Error(ex.Message); }
         Toasts.Success(enabled ? "Whitelist enabled." : "Whitelist disabled.");
     }
 

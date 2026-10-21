@@ -1,4 +1,4 @@
-namespace MinecraftServerManager.Services;
+namespace MinecraftServerManager.Components.Shared;
 
 public enum ToastLevel { Info, Success, Warning, Error }
 
