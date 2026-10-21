@@ -1,5 +1,13 @@
 # Release Notes
 
+## 1.0.1 (21 October 2026)
+
+A performance update. To upgrade, run the new setup over 1.0.0; your settings, worlds and backups are kept.
+
+- **Console:** much less work while output is streaming in (about 8× less server time per update, with almost no memory churn), so bursts such as world generation stay smooth even with several Console tabs open.
+- **Dashboard:** reads only the active world instead of every world, so it opens and refreshes faster on servers with several large worlds. Online players and the console preview are cheaper to refresh.
+- **Worlds and backups:** deleting a large world, and cleaning up after a restore, make far fewer file-system calls.
+
 ## 1.0.0 (21 October 2026)
 
 First release. Download it from the [Releases page](https://gitea.uk.local:3001/Apps/minecraft-server-management/releases).
