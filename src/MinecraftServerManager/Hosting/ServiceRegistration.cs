@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.AspNetCore.DataProtection;
 using MinecraftServerManager.Components.Shared;
 using MinecraftServerManager.Features.Auth;
 using MinecraftServerManager.Features.Backups;
@@ -41,5 +42,19 @@ public static class ServiceRegistration
         services.AddScoped<AuthenticationStateProvider, SecurityStampRevalidator>();
         services.AddScoped<ToastService>();
         return services;
+    }
+
+    /// <summary>
+    /// Keys that encrypt sign-in cookies and anti-forgery tokens, kept in the data folder so sign-ins survive restarts.
+    /// On Windows they are also encrypted at rest; the folder's permissions already keep other users from reading them.
+    /// </summary>
+    public static IDataProtectionBuilder AddManagerDataProtection(this IServiceCollection services, string dataDirectory)
+    {
+        var builder = services.AddDataProtection()
+            .SetApplicationName("MinecraftServerManager")
+            .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "keys")));
+        // Machine scope, so the keys stay readable if the panel runs under another account (e.g. interactively).
+        if (OperatingSystem.IsWindows()) builder.ProtectKeysWithDpapi(protectToLocalMachine: true);
+        return builder;
     }
 }

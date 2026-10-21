@@ -8,8 +8,8 @@ The panel can start programs, run server commands and replace files, so treat ac
 2. **Use a strong, unique admin password** (the minimum is 8 characters; longer is better).
 3. **Complete setup immediately after installing**. Until then, whoever completes the setup page first creates the admin account. The page only works in a browser on the server itself (`http://localhost:<port>`) unless you set `Manager:AllowRemoteSetup` ([Configuration Reference](Configuration-Reference#appsettingsjson-keys)).
 4. **Don't enable RCON** unless another tool needs it, and never expose port 25575 to the internet. The panel doesn't need RCON.
-5. **Consider a dedicated service account** rather than Local System ([how](Running-as-a-Windows-Service#service-account)).
-6. **Restrict the folders**: only administrators and the service account need access to `C:\ProgramData\Minecraft Server Manager` (it holds `appsettings.json` and `data\`; with the zip, the panel folder). Ordinary users can read `C:\ProgramData` by default, so remove *Users* from this folder's permissions if others sign in to the server.
+5. **Keep the service on its own account.** It runs as the virtual account `NT SERVICE\MinecraftServerManager` rather than Local System ([details](Running-as-a-Windows-Service#service-account)).
+6. **Keep the folders private.** The installers limit the panel's data and the server folders to SYSTEM, Administrators and the service. If you move the server or backups to a new folder yourself, run `MinecraftServerManager.exe secure` as administrator afterwards ([how](Configuration-Reference#the-secure-command)).
 7. **Verify downloads** against `SHA256SUMS.txt` from the release before running an installer.
 8. **Keep backups off the server** as well as on it.
 9. **Keep Windows, Java, Minecraft and the panel updated.**
@@ -23,7 +23,7 @@ The panel can start programs, run server commands and replace files, so treat ac
 | Brute-force protection | After 5 failed sign-ins from one IP address (for IPv6, one /64 network), sign-in from that address is refused for 5 minutes. |
 | Session cookie | `mcm.auth`: HttpOnly, SameSite=Strict, encrypted and signed. Lasts for the browser session, or 14 days (renewed with use) with *Keep me signed in*. |
 | Password change | Changing the password or username signs out every existing session: other browsers on their next page load, and panel tabs that are already open within 30 seconds. |
-| Cookie keys | ASP.NET Core Data Protection keys in `data\keys\`. Deleting them signs everyone out. |
+| Cookie keys | ASP.NET Core Data Protection keys in `data\keys\`, encrypted with Windows DPAPI and readable only by SYSTEM, Administrators and the service. Deleting them signs everyone out. |
 
 ### Resetting a forgotten password
 
@@ -41,6 +41,7 @@ The panel can start programs, run server commands and replace files, so treat ac
 | "Zip slip" (uploads and restores) | Every entry in an uploaded world or restored backup is checked to stay inside its target folder; unsafe archives are rejected before anything is changed. |
 | Archive bombs | An uploaded world or restored backup that would need more space than the disk has free is refused before extraction, and a world's `level.dat` is only read up to 32 MB. |
 | Setup takeover | First-run setup is only offered to the server itself, checked by both the connection and the requested host name, so a web page can't reach it through DNS rebinding. |
+| Other users on the server | They can't read the panel's settings or sign-in keys, or change the server's files (a replaced `server.jar` would otherwise run as the service). The panel and Minecraft run as a virtual account, not Local System. |
 | Command injection via player names | Player names are validated (1–16 letters, digits, underscores) and IP addresses parsed before being placed in commands. Line breaks are stripped from reasons and console input. |
 | Tampered downloads | Server jars are verified against Mojang's SHA-1 before installation. |
 | Orphaned processes | On Windows the Minecraft process is tied to the panel with a job object, so it can't keep running uncontrolled if the panel is killed. |

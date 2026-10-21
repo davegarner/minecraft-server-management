@@ -1,15 +1,17 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.DataProtection;
 using MinecraftServerManager.Components;
 using MinecraftServerManager.Endpoints;
 using MinecraftServerManager.Features.Auth;
 using MinecraftServerManager.Features.Settings;
 using MinecraftServerManager.Hosting;
 
-// `MinecraftServerManager.exe configure ...` writes the machine-wide settings and exits (used by the installers).
+// `MinecraftServerManager.exe configure ...` writes the machine-wide settings and `secure` sets folder permissions;
+// both exit straight away (used by the installers).
 if (args.Length > 0 && args[0].Equals(MachineConfiguration.Command, StringComparison.OrdinalIgnoreCase))
     return MachineConfiguration.Run(args[1..]);
+if (args.Length > 0 && args[0].Equals(SecureCommand.Command, StringComparison.OrdinalIgnoreCase))
+    return SecureCommand.Run(args[1..]);
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -30,9 +32,7 @@ builder.Services.AddWindowsService(options => options.ServiceName = "MinecraftSe
 builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(90));
 
 var dataDirectory = SettingsService.ResolveDataDirectory(builder.Configuration, builder.Environment.ContentRootPath);
-builder.Services.AddDataProtection()
-    .SetApplicationName("MinecraftServerManager")
-    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "keys")));
+builder.Services.AddManagerDataProtection(dataDirectory);
 
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddCascadingAuthenticationState();

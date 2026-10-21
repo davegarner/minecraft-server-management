@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MinecraftServerManager.Infrastructure;
 using MinecraftServerManager.Util;
 
 namespace MinecraftServerManager.Features.Settings;
@@ -18,7 +19,7 @@ public sealed class SettingsService
     {
         _logger = logger;
         DataDirectory = ResolveDataDirectory(configuration, environment.ContentRootPath);
-        Directory.CreateDirectory(DataDirectory);
+        FolderSecurity.CreatePrivateDirectory(DataDirectory);
         _filePath = Path.Combine(DataDirectory, "settings.json");
         _current = Load();
     }
@@ -73,7 +74,7 @@ public sealed class SettingsService
         if (ValidateServerSettings(edited) is { } error) throw new InvalidOperationException(error);
         try
         {
-            Directory.CreateDirectory(edited.ServerDirectory.Trim());
+            FolderSecurity.CreatePrivateDirectory(edited.ServerDirectory.Trim());
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {

@@ -6,6 +6,7 @@ using MinecraftServerManager.Core;
 using MinecraftServerManager.Features.Server;
 using MinecraftServerManager.Features.ServerProperties;
 using MinecraftServerManager.Features.Settings;
+using MinecraftServerManager.Infrastructure;
 using MinecraftServerManager.Util;
 
 namespace MinecraftServerManager.Features.Backups;
@@ -231,7 +232,7 @@ public sealed partial class BackupService(
             throw new InvalidOperationException("The server is starting or stopping. Try the backup again in a moment.");
 
         var backupDirectory = current.ResolvedBackupDirectory;
-        Directory.CreateDirectory(backupDirectory);
+        FolderSecurity.CreatePrivateDirectory(backupDirectory);
 
         SetProgress(new BackupProgress(true, "Backup", world, "Preparing", 0, 0, 0, 0));
         var savingDisabled = false;

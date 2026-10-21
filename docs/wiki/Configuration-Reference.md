@@ -44,6 +44,16 @@ It also sets `Manager:DataDirectory` to `C:\ProgramData\Minecraft Server Manager
 
 > If you change the port, update the Start menu shortcut too (right-click → Properties), or re-run the setup wizard.
 
+## The secure command
+
+`MinecraftServerManager.exe secure` sets the folder permissions the service needs ([Service account](Running-as-a-Windows-Service#service-account)). The installers and `install-service.ps1` run it for you; run it yourself, as administrator, after pointing the panel at a new server or backup folder:
+
+```powershell
+& "C:\Program Files\Minecraft Server Manager\MinecraftServerManager.exe" secure
+```
+
+It reads the data folder and the server and backup folders from the panel's settings. `--service-name <name>` gives access to a differently named service's account. It reports each folder as `[ok]` or `[warning]` and returns exit code 0 (2 for invalid arguments).
+
 ## appsettings.json keys
 
 The default file next to the executable:

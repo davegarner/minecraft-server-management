@@ -4,6 +4,7 @@
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Authentication.Cookies
+@using MinecraftServerManager.Infrastructure
 @inject AuthService Auth
 @inject SettingsService Settings
 @inject NavigationManager Navigation
@@ -95,7 +96,7 @@ else
 
         try
         {
-            Directory.CreateDirectory(directory);
+            FolderSecurity.CreatePrivateDirectory(directory);
             Auth.CompleteSetup(Input.Username, Input.Password);
             Settings.Update(s => s.ServerDirectory = Path.GetFullPath(directory));
         }

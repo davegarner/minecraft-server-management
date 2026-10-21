@@ -1,4 +1,5 @@
 using MinecraftServerManager.Features.Settings;
+using MinecraftServerManager.Infrastructure;
 using MinecraftServerManager.Util;
 
 namespace MinecraftServerManager.Features.ServerProperties;
@@ -33,7 +34,7 @@ public sealed class ServerPropertiesService(SettingsService settings, ILogger<Se
             if (!exists) doc.AddComment("Minecraft server properties (created by Minecraft Server Manager)");
             foreach (var (key, value) in values) doc.Set(key, value);
             foreach (var key in removeKeys ?? Array.Empty<string>()) doc.Remove(key);
-            Directory.CreateDirectory(settings.Current.ServerDirectory);
+            FolderSecurity.CreatePrivateDirectory(settings.Current.ServerDirectory);
             doc.Save(FilePath);
         }
         logger.LogInformation("Updated server.properties: {Keys}", string.Join(", ", values.Keys));
@@ -46,7 +47,7 @@ public sealed class ServerPropertiesService(SettingsService settings, ILogger<Se
     public void AcceptEula()
     {
         var current = settings.Current;
-        Directory.CreateDirectory(current.ServerDirectory);
+        FolderSecurity.CreatePrivateDirectory(current.ServerDirectory);
         var doc = new JavaPropertiesDocument();
         doc.AddComment($"By changing the setting below to TRUE you are indicating your agreement to our EULA ({EulaUrl}).");
         doc.AddComment($"Accepted via Minecraft Server Manager on {DateTime.Now:yyyy-MM-dd HH:mm:ss}");

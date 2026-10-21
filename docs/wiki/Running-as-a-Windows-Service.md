@@ -11,7 +11,7 @@ The panel runs as a Windows service, so it starts with Windows, keeps running wh
 | Name | `MinecraftServerManager` |
 | Display name | Minecraft Server Manager |
 | Startup type | Automatic |
-| Log on as | Local System |
+| Log on as | `NT SERVICE\MinecraftServerManager`, the service's own virtual account ([details](#service-account)) |
 | Recovery | Restart after 1 minute (failure count resets daily) |
 
 ### Start Minecraft with Windows
@@ -62,19 +62,28 @@ To remove it: `.\uninstall-service.ps1` (add `-RemoveFirewallRules` to remove th
 
 ## Service account
 
-The service runs as **Local System**, which can read and write anywhere on the machine. That's the simplest setup. For tighter security you can run it as a dedicated local account:
+The service runs as **`NT SERVICE\MinecraftServerManager`**, a virtual account Windows manages for the service (it has no password and can't be used to sign in). It has the rights of an ordinary user plus access to the panel's own folders, so the panel and Minecraft can't change the rest of the machine. Versions before 1.0.3 ran as Local System; upgrading switches to the virtual account.
 
-1. Create a standard user, e.g. `mcservice`.
-2. Give it **Modify** permission on `C:\ProgramData\Minecraft Server Manager` (or the zip folder), the server directory and the backup directory, and **Read & execute** on the program folder.
-3. Make sure it can run Java (select a full Java path in [Settings](Settings#java)).
-4. Change the service's log-on account:
+When installing or upgrading, the installers (and `install-service.ps1`) run `MinecraftServerManager.exe secure`, which:
 
-   ```powershell
-   sc.exe config MinecraftServerManager obj= ".\mcservice" password= "<password>"
-   Restart-Service MinecraftServerManager
-   ```
+- limits `C:\ProgramData\Minecraft Server Manager` (settings, sign-in keys) to SYSTEM, Administrators and the service;
+- gives the service **Modify** access to the server directory and backup directory, and stops other users changing them if every user could (as with folders at the root of a drive);
+- with the zip, gives the service access to the panel folder, and limits it the same way if every user could change it;
+- registers the panel's Event Log source.
 
-The panel's process (and therefore Minecraft) then only has that account's rights. Upgrading with the setup wizard keeps the service's log-on account.
+Folders the panel creates itself (the server directory at first-run setup, a new backup directory) get the same permissions. Opening them in Explorer as an administrator may show *You don't currently have permission*; click **Continue**.
+
+**Java** must be readable by the service: a system-wide installation (e.g. Eclipse Temurin in `C:\Program Files`) works; a JDK inside a user's profile does not.
+
+To use a different account, pass it to the script; it's kept on later upgrades with the setup wizard (the MSI always uses the virtual account):
+
+```powershell
+.\install-service.ps1 -Account LocalSystem            # the behaviour of versions before 1.0.3
+.\install-service.ps1 -Account ".\mcservice"          # then set its password:
+sc.exe config MinecraftServerManager obj= ".\mcservice" password= "<password>"
+```
+
+A custom account needs **Modify** permission on `C:\ProgramData\Minecraft Server Manager` (or the zip folder), the server directory and the backup directory, and **Read & execute** on the program folder and Java.
 
 ## Updating the panel
 

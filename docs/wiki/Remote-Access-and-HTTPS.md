@@ -54,7 +54,7 @@ The panel's web server (Kestrel) can serve HTTPS with a certificate in PFX forma
 4. Open TCP 8443 in the firewall and restart the service.
 5. Browse to `https://mc-panel.example.local:8443`.
 
-> Don't put this in `C:\Program Files\Minecraft Server Manager\appsettings.json`: that file is replaced when you upgrade. Protect the file if it contains the certificate password; only administrators and the service account should be able to read it. Alternatively load the certificate from the Windows certificate store; see Microsoft's [Kestrel endpoint configuration](https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel/endpoints) documentation.
+> Don't put this in `C:\Program Files\Minecraft Server Manager\appsettings.json`: that file is replaced when you upgrade. The installers already limit `C:\ProgramData\Minecraft Server Manager` to administrators and the service, which protects a certificate password stored there. Alternatively load the certificate from the Windows certificate store; see Microsoft's [Kestrel endpoint configuration](https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel/endpoints) documentation.
 
 ## Option 3: Behind a reverse proxy
 

@@ -12,11 +12,14 @@ param(
     [Parameter(Mandatory)] [string]$Msi,
     # Optional: a higher-versioned build of the same MSI, to test that an upgrade keeps the options.
     [string]$UpgradeMsi,
+    # Optional: the previous release's setup wizard, to test upgrading an existing installation.
+    [string]$PreviousSetupExe,
     [string]$LogDirectory = "artifacts\test-logs"
 )
 
 $ErrorActionPreference = "Stop"
 $ServiceName = "MinecraftServerManager"
+$ServiceAccount = "NT SERVICE\$ServiceName"
 $InstallDir = Join-Path $env:ProgramFiles "Minecraft Server Manager"
 $ConfigDir = Join-Path $env:ProgramData "Minecraft Server Manager"
 $Shortcut = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\Minecraft Server Manager.url"
@@ -26,6 +29,7 @@ $LogDirectory = (Resolve-Path $LogDirectory).Path
 $SetupExe = (Resolve-Path $SetupExe).Path
 $Msi = (Resolve-Path $Msi).Path
 if ($UpgradeMsi) { $UpgradeMsi = (Resolve-Path $UpgradeMsi).Path }
+if ($PreviousSetupExe) { $PreviousSetupExe = (Resolve-Path $PreviousSetupExe).Path }
 $script:failures = 0
 
 function Check([bool]$Condition, [string]$Message) {
@@ -52,6 +56,59 @@ function Get-Config { Get-Content (Join-Path $ConfigDir "appsettings.json") -Raw
 function Get-ServiceStatus { (Get-Service $ServiceName -ErrorAction SilentlyContinue).Status }
 function Invoke-Program([string]$File, [string[]]$Arguments) { (Start-Process -FilePath $File -ArgumentList $Arguments -Wait -PassThru).ExitCode }
 function Test-RecoveryActions { [bool]((& sc.exe qfailure $ServiceName) -match "RESTART") }
+function Get-ServiceAccount { (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").StartName }
+
+# Only SYSTEM, Administrators and the service's account have access, and nothing is inherited from the parent.
+function Test-Private([string]$Path) {
+    $acl = Get-Acl $Path
+    $others = $acl.Access | Where-Object { $_.IdentityReference.Value -notin @("NT AUTHORITY\SYSTEM", "BUILTIN\Administrators", $ServiceAccount) }
+    if ($others) { Write-Host "    $Path also grants: $(($others.IdentityReference.Value | Sort-Object -Unique) -join ', ')" }
+    $acl.AreAccessRulesProtected -and -not $others
+}
+
+function Complete-Setup([int]$Port, [string]$ServerDirectory) {
+    $form = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/setup" -UseBasicParsing -SessionVariable session
+    $token = [regex]::Match($form.Content, 'name="__RequestVerificationToken" value="([^"]+)"').Groups[1].Value
+    $null = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/setup" -Method Post -WebSession $session -UseBasicParsing -Body @{
+        "_handler" = "setup"; "__RequestVerificationToken" = $token; "Input.Username" = "admin"
+        "Input.Password" = "ci-only-password"; "Input.ConfirmPassword" = "ci-only-password"; "Input.ServerDirectory" = $ServerDirectory
+    }
+}
+
+# Signing in needs the service to read settings.json and the sign-in keys, and to issue a cookie.
+function Test-SignIn([int]$Port) {
+    try {
+        $form = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/login" -UseBasicParsing -SessionVariable session
+        $token = [regex]::Match($form.Content, 'name="__RequestVerificationToken" value="([^"]+)"').Groups[1].Value
+        $page = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/login" -Method Post -WebSession $session -UseBasicParsing -Body @{
+            "_handler" = "login"; "__RequestVerificationToken" = $token; "Input.Username" = "admin"; "Input.Password" = "ci-only-password"
+        }
+        $page.Content -match "<title>Dashboard"
+    } catch { $false }
+}
+
+# ------------------------------------------------------------------------------------------------
+if ($PreviousSetupExe) {
+    Write-Host "Setup wizard: upgrade an installation of the previous release" -ForegroundColor Cyan
+    $code = Invoke-Program $PreviousSetupExe @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=`"$LogDirectory\previous-install.log`"")
+    Check ($code -eq 0) "previous release installed (exit code $code)"
+    Check ([bool](Wait-For { Get-Panel 8080 "/setup" })) "previous release serves the setup page"
+    Complete-Setup 8080 "C:\MinecraftServerPrevious"
+    Check (Test-SignIn 8080) "can sign in to the previous release"
+
+    $code = Invoke-Program $SetupExe @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=`"$LogDirectory\previous-upgrade.log`"")
+    Check ($code -eq 0) "upgrade exited with code 0 (got $code)"
+    Check ((Get-ServiceAccount) -eq $ServiceAccount) "service now runs as $ServiceAccount ($(Get-ServiceAccount))"
+    Check ([bool](Wait-For { Get-Panel 8080 "/login" })) "panel answers after the upgrade"
+    Check (Test-SignIn 8080) "the same account can still sign in (settings and keys readable)"
+    Check (Test-Private (Join-Path $ConfigDir "data")) "panel data limited to SYSTEM, Administrators and the service"
+    Check (Test-Private "C:\MinecraftServerPrevious") "existing server folder no longer writable by other users"
+
+    # Back to a clean machine for the checks below.
+    $null = Invoke-Program (Join-Path $InstallDir "unins000.exe") @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
+    $null = Wait-For { -not (Get-Service $ServiceName -ErrorAction SilentlyContinue) }
+    Remove-Item $ConfigDir, "C:\MinecraftServerPrevious" -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 # ------------------------------------------------------------------------------------------------
 Write-Host "Setup wizard: fresh install with default options" -ForegroundColor Cyan
@@ -60,8 +117,11 @@ Check ($code -eq 0) "setup exited with code 0 (got $code)"
 Check ((Get-ServiceStatus) -eq "Running") "service is running"
 Check ((Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").StartMode -eq "Auto") "service starts automatically"
 Check (Test-RecoveryActions) "service restarts after a failure"
+Check ((Get-ServiceAccount) -eq $ServiceAccount) "service runs as $ServiceAccount ($(Get-ServiceAccount))"
 $page = Wait-For { Get-Panel 8080 "/setup" }
 Check ($page -and $page.Content -match "Create account") "panel serves the first-run setup page on port 8080"
+Check (Test-Private (Join-Path $ConfigDir "data")) "panel data limited to SYSTEM, Administrators and the service"
+Check ([System.Diagnostics.EventLog]::SourceExists($ServiceName)) "Event Log source registered"
 Check (Test-Path $Shortcut) "Start menu shortcut created"
 Check ((Test-Path $Shortcut) -and ((Get-Content $Shortcut -Raw) -match "URL=http://localhost:8080/")) "shortcut opens http://localhost:8080/"
 $config = Get-Config
@@ -71,13 +131,10 @@ Check (Test-Rule "Minecraft Server (TCP 25565)") "firewall rule lets Minecraft p
 Check (-not (Test-Rule "Minecraft Server Manager (TCP 8080)")) "no firewall rule for the panel by default"
 
 # Complete first-run setup so the upgrade below can prove that settings survive.
-$form = Invoke-WebRequest -Uri "http://127.0.0.1:8080/setup" -UseBasicParsing -SessionVariable session
-$token = [regex]::Match($form.Content, 'name="__RequestVerificationToken" value="([^"]+)"').Groups[1].Value
-$null = Invoke-WebRequest -Uri "http://127.0.0.1:8080/setup" -Method Post -WebSession $session -UseBasicParsing -Body @{
-    "_handler" = "setup"; "__RequestVerificationToken" = $token; "Input.Username" = "admin"
-    "Input.Password" = "ci-only-password"; "Input.ConfirmPassword" = "ci-only-password"; "Input.ServerDirectory" = "C:\MinecraftServerCI"
-}
+Complete-Setup 8080 "C:\MinecraftServerCI"
 Check (Test-Path (Join-Path $ConfigDir "data\settings.json")) "first-run setup completed"
+Check (Test-SignIn 8080) "can sign in with the new account"
+Check (Test-Private "C:\MinecraftServerCI") "server folder created at setup isn't writable by other users"
 
 # ------------------------------------------------------------------------------------------------
 Write-Host "Setup wizard: upgrade in place" -ForegroundColor Cyan
@@ -87,6 +144,8 @@ Check ((Get-ServiceStatus) -eq "Running") "service is running after the upgrade"
 $page = Wait-For { Get-Panel 8080 "/login" }
 Check ($page -and $page.Content -match "Sign in") "panel kept its port and account (shows sign-in, not setup)"
 Check ((Get-Config).Urls -eq "http://localhost:8080") "upgrade didn't change the panel address"
+Check ((Get-ServiceAccount) -eq $ServiceAccount) "service still runs as $ServiceAccount"
+Check (Test-SignIn 8080) "can still sign in after the upgrade"
 
 # ------------------------------------------------------------------------------------------------
 Write-Host "configure command" -ForegroundColor Cyan
@@ -115,8 +174,10 @@ $code = Invoke-Program "msiexec.exe" @("/i", "`"$Msi`"", "/qn", "/norestart", "/
 Check ($code -eq 0) "msiexec install exited with code 0 (got $code)"
 Check ((Get-ServiceStatus) -eq "Running") "service is running"
 Check (Test-RecoveryActions) "service restarts after a failure"
+Check ((Get-ServiceAccount) -eq $ServiceAccount) "service runs as $ServiceAccount ($(Get-ServiceAccount))"
 $page = Wait-For { Get-Panel 8090 "/setup" }
 Check ($page -and $page.Content -match "Create account") "panel serves the first-run setup page on port 8090"
+Check (Test-Private (Join-Path $ConfigDir "data")) "panel data limited to SYSTEM, Administrators and the service"
 Check ((Get-Config).Urls -eq "http://0.0.0.0:8090") "panel listens on the network on port 8090"
 Check (Test-Rule "Minecraft Server (TCP 25565)") "firewall rule lets Minecraft players in"
 Check (Test-Rule "Minecraft Server Manager (TCP 8090)") "firewall rule lets other computers reach the panel"

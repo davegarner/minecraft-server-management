@@ -9,6 +9,7 @@ using MinecraftServerManager.Features.Server;
 using MinecraftServerManager.Features.ServerProperties;
 using MinecraftServerManager.Features.Settings;
 using MinecraftServerManager.Infrastructure.Mojang;
+using MinecraftServerManager.Infrastructure;
 using MinecraftServerManager.Util;
 
 namespace MinecraftServerManager.Features.Players;
@@ -185,7 +186,7 @@ public sealed class PlayerService(
     private void WriteArray(string fileName, JsonArray array)
     {
         var current = settings.Current;
-        Directory.CreateDirectory(current.ServerDirectory);
+        FolderSecurity.CreatePrivateDirectory(current.ServerDirectory);
         FileUtil.WriteAllTextAtomic(Path.Combine(current.ServerDirectory, fileName), array.ToJsonString(WriteOptions));
     }
 

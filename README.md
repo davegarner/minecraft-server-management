@@ -62,7 +62,7 @@ To upgrade, run the new version's setup wizard; your settings, worlds and backup
 
 See [Installation](https://gitea.uk.local:3001/Apps/minecraft-server-management/wiki/Installation) in the wiki for details and silent-install switches.
 
-> The service runs as **LocalSystem**, so Java must be reachable by that account. Choosing a full path to `java.exe` in Settings (as **Detect** does) avoids PATH issues.
+> The service runs as its own virtual account, `NT SERVICE\MinecraftServerManager`, so Java must be installed system-wide (not inside a user's profile). Choosing a full path to `java.exe` in Settings (as **Detect** does) avoids PATH issues.
 
 ## Remote access and HTTPS
 

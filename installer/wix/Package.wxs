@@ -57,7 +57,10 @@
       <ComponentRef Id="PanelFirewallRule" />
     </Feature>
 
-    <!-- The executable, registered as an automatically starting service that restarts after a failure. -->
+    <!--
+      The executable, registered as an automatically starting service that restarts after a failure. It runs as its
+      own virtual account rather than Local System; the SecurePanel action below gives that account its folders.
+    -->
     <Component Id="ServiceExecutable" Directory="INSTALLFOLDER">
       <File Id="MainExe" Source="$(var.PublishDir)\MinecraftServerManager.exe" KeyPath="yes" />
       <ServiceInstall Id="Service"
@@ -67,7 +70,7 @@
                       Type="ownProcess"
                       Start="auto"
                       ErrorControl="normal"
-                      Account="LocalSystem"
+                      Account="NT SERVICE\MinecraftServerManager"
                       Vital="yes">
         <util:ServiceConfig FirstFailureActionType="restart"
                             SecondFailureActionType="restart"
@@ -105,8 +108,16 @@
                   Execute="deferred"
                   Impersonate="no"
                   Return="check" />
+    <!-- Then let the service account use the panel's folders and keep other users out of them. -->
+    <CustomAction Id="SecurePanel"
+                  FileRef="MainExe"
+                  ExeCommand="secure"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
     <InstallExecuteSequence>
       <Custom Action="ConfigurePanel" Before="StartServices" Condition="NOT REMOVE" />
+      <Custom Action="SecurePanel" After="ConfigurePanel" Condition="NOT REMOVE" />
     </InstallExecuteSequence>
   </Package>
 </Wix>

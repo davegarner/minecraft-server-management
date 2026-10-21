@@ -55,13 +55,25 @@ jobs:
           dotnet build installer/wix/MinecraftServerManager.Installer.wixproj --no-incremental -c Release -p:Version=99.0.0
           -p:AppPublishDir=$PWD\artifacts\publish -p:GeneratedFilesWxs=$PWD\artifacts\wix\Files.wxs -o artifacts/upgrade-test
 
+      - name: Download the latest release for the upgrade test
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Optional: without a published release the upgrade test is skipped.
+          gh release download --repo "${{ github.repository }}" --pattern "*-Setup.exe" --dir artifacts/previous
+          if ($LASTEXITCODE -ne 0) { Write-Host "No previous release to upgrade from."; exit 0 }
+
       - name: Test installers
         shell: pwsh
-        run: >
-          ./installer/tests/Test-Installers.ps1
-          -SetupExe artifacts/release/MinecraftServerManager-${{ steps.version.outputs.version }}-Setup.exe
-          -Msi artifacts/release/MinecraftServerManager-${{ steps.version.outputs.version }}-x64.msi
-          -UpgradeMsi artifacts/upgrade-test/MinecraftServerManager-99.0.0-x64.msi
+        run: |
+          $previous = Get-ChildItem artifacts/previous/*-Setup.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          $options = @{}
+          if ($previous) { $options.PreviousSetupExe = $previous.FullName }
+          ./installer/tests/Test-Installers.ps1 @options `
+            -SetupExe artifacts/release/MinecraftServerManager-${{ steps.version.outputs.version }}-Setup.exe `
+            -Msi artifacts/release/MinecraftServerManager-${{ steps.version.outputs.version }}-x64.msi `
+            -UpgradeMsi artifacts/upgrade-test/MinecraftServerManager-99.0.0-x64.msi
 
       - name: Upload release files
         uses: actions/upload-artifact@v4

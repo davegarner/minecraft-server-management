@@ -65,7 +65,7 @@ The panel now runs in the background as a Windows service and starts with Window
 | --- | --- |
 | Program files | `C:\Program Files\Minecraft Server Manager\` |
 | Panel settings, sign-in and keys | `C:\ProgramData\Minecraft Server Manager\` (`appsettings.json` and `data\`) |
-| Windows service | **Minecraft Server Manager** (`MinecraftServerManager`): automatic start, Local System, restarts if it fails |
+| Windows service | **Minecraft Server Manager** (`MinecraftServerManager`): automatic start, runs as `NT SERVICE\MinecraftServerManager`, restarts if it fails |
 | Firewall rules | *Minecraft Server (TCP 25565)* and, if chosen, *Minecraft Server Manager (TCP &lt;port&gt;)* |
 | Start menu | *Minecraft Server Manager* (opens the panel in your browser) |
 | Uninstaller | *Settings → Apps → Installed apps → Minecraft Server Manager* |

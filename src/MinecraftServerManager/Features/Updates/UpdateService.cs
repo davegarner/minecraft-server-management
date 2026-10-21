@@ -9,6 +9,7 @@ using MinecraftServerManager.Features.Server;
 using MinecraftServerManager.Features.ServerProperties;
 using MinecraftServerManager.Features.Settings;
 using MinecraftServerManager.Infrastructure.Mojang;
+using MinecraftServerManager.Infrastructure;
 using MinecraftServerManager.Util;
 
 namespace MinecraftServerManager.Features.Updates;
@@ -166,7 +167,7 @@ public sealed class UpdateService(
                     throw new InvalidOperationException($"Minecraft {versionId} requires Java {required} or newer, but the configured Java is version {runtime.MajorVersion}. Install a newer Java and select it in Settings.");
             }
 
-            Directory.CreateDirectory(current.ServerDirectory);
+            FolderSecurity.CreatePrivateDirectory(current.ServerDirectory);
             SetProgress(Progress with { Stage = $"Downloading server {versionId}", TotalBytes = download.Size });
             await mojang.DownloadAsync(download, tempPath,
                 (received, total) => SetProgress(Progress with { BytesDownloaded = received, TotalBytes = total }), cancellationToken);
