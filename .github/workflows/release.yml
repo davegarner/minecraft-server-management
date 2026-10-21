@@ -66,6 +66,8 @@ jobs:
 
       - name: Test installers
         shell: pwsh
+        # Normally under two minutes; a hang must not hold the job (and the log upload below) for hours.
+        timeout-minutes: 30
         run: |
           $previous = Get-ChildItem artifacts/previous/*-Setup.exe -ErrorAction SilentlyContinue | Select-Object -First 1
           $options = @{}

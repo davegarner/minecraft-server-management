@@ -54,7 +54,20 @@ function Get-Panel([int]$Port, [string]$Path = "/login") {
 function Test-Rule([string]$Name) { [bool](Get-NetFirewallRule -DisplayName $Name -ErrorAction SilentlyContinue) }
 function Get-Config { Get-Content (Join-Path $ConfigDir "appsettings.json") -Raw | ConvertFrom-Json }
 function Get-ServiceStatus { (Get-Service $ServiceName -ErrorAction SilentlyContinue).Status }
-function Invoke-Program([string]$File, [string[]]$Arguments) { (Start-Process -FilePath $File -ArgumentList $Arguments -Wait -PassThru).ExitCode }
+# Runs an installer and returns its exit code. A run that hangs is stopped after $TimeoutMinutes and counted as a
+# failure, so the job still finishes and uploads the installer logs.
+function Invoke-Program([string]$File, [string[]]$Arguments, [int]$TimeoutMinutes = 10) {
+    $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru
+    $null = $process.Handle # keeps the exit code available after the process ends
+    if ($process.WaitForExit($TimeoutMinutes * 60 * 1000)) { return $process.ExitCode }
+
+    Write-Host "  [FAIL] $(Split-Path $File -Leaf) $($Arguments -join ' ') didn't finish within $TimeoutMinutes minutes" -ForegroundColor Red
+    $script:failures++
+    Get-Process msiexec, MinecraftServerManager, java -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime | Out-String | Write-Host
+    Get-Service $ServiceName -ErrorAction SilentlyContinue | Format-List Name, Status, StartType | Out-String | Write-Host
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    return -1
+}
 function Test-RecoveryActions { [bool]((& sc.exe qfailure $ServiceName) -match "RESTART") }
 function Get-ServiceAccount { (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").StartName }
 
