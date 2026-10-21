@@ -19,10 +19,30 @@
     <Property Id="ARPHELPLINK" Value="https://github.com/davegarner/minecraft-server-management/wiki" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
-    <!-- Options, settable on the msiexec command line. -->
-    <Property Id="PANELPORT" Value="8080" Secure="yes" />
-    <Property Id="REMOTEACCESS" Value="0" Secure="yes" />
-    <Property Id="OPENMINECRAFTPORT" Value="1" Secure="yes" />
+    <!--
+      Options, settable on the msiexec command line. Windows Installer doesn't remember them, so the previous
+      install's choices are read back from the registry: an upgrade or uninstall then uses the same port and
+      firewall rules (removing the right rules) unless new values are given on the command line.
+    -->
+    <Property Id="PANELPORT" Secure="yes" />
+    <Property Id="REMOTEACCESS" Secure="yes" />
+    <Property Id="OPENMINECRAFTPORT" Secure="yes" />
+    <Property Id="PREVIOUSPANELPORT" Secure="yes">
+      <RegistrySearch Id="PreviousPanelPortSearch" Root="HKLM" Key="Software\Minecraft Server Manager" Name="PanelPort" Type="raw" />
+    </Property>
+    <Property Id="PREVIOUSREMOTEACCESS" Secure="yes">
+      <RegistrySearch Id="PreviousRemoteAccessSearch" Root="HKLM" Key="Software\Minecraft Server Manager" Name="PanelFirewallRule" Type="raw" />
+    </Property>
+    <Property Id="PREVIOUSMINECRAFTRULE" Secure="yes">
+      <RegistrySearch Id="PreviousMinecraftRuleSearch" Root="HKLM" Key="Software\Minecraft Server Manager" Name="MinecraftFirewallRule" Type="raw" />
+    </Property>
+    <SetProperty Action="RestorePanelPort" Id="PANELPORT" Value="[PREVIOUSPANELPORT]" After="AppSearch" Sequence="both" Condition="NOT PANELPORT AND PREVIOUSPANELPORT" />
+    <SetProperty Action="DefaultPanelPort" Id="PANELPORT" Value="8080" After="RestorePanelPort" Sequence="both" Condition="NOT PANELPORT" />
+    <SetProperty Action="RestoreRemoteAccess" Id="REMOTEACCESS" Value="1" After="DefaultPanelPort" Sequence="both" Condition="NOT REMOTEACCESS AND PREVIOUSREMOTEACCESS" />
+    <SetProperty Action="DefaultRemoteAccess" Id="REMOTEACCESS" Value="0" After="RestoreRemoteAccess" Sequence="both" Condition="NOT REMOTEACCESS" />
+    <SetProperty Action="RestoreMinecraftRule" Id="OPENMINECRAFTPORT" Value="1" After="DefaultRemoteAccess" Sequence="both" Condition="NOT OPENMINECRAFTPORT AND PREVIOUSMINECRAFTRULE" />
+    <SetProperty Action="UpgradeWithoutMinecraftRule" Id="OPENMINECRAFTPORT" Value="0" After="RestoreMinecraftRule" Sequence="both" Condition="NOT OPENMINECRAFTPORT AND PREVIOUSPANELPORT" />
+    <SetProperty Action="DefaultMinecraftRule" Id="OPENMINECRAFTPORT" Value="1" After="UpgradeWithoutMinecraftRule" Sequence="both" Condition="NOT OPENMINECRAFTPORT" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Minecraft Server Manager" />
@@ -66,12 +86,12 @@
 
     <Component Id="MinecraftFirewallRule" Directory="INSTALLFOLDER" Condition="OPENMINECRAFTPORT = 1">
       <fw:FirewallException Id="MinecraftPort" Name="Minecraft Server (TCP 25565)" Port="25565" Protocol="tcp" Scope="any" />
-      <RegistryValue Root="HKLM" Key="Software\Minecraft Server Manager" Name="MinecraftFirewallRule" Type="integer" Value="1" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="Software\Minecraft Server Manager" Name="MinecraftFirewallRule" Type="string" Value="1" KeyPath="yes" />
     </Component>
 
     <Component Id="PanelFirewallRule" Directory="INSTALLFOLDER" Condition="REMOTEACCESS = 1">
       <fw:FirewallException Id="PanelPort" Name="Minecraft Server Manager (TCP [PANELPORT])" Port="[PANELPORT]" Protocol="tcp" Scope="any" />
-      <RegistryValue Root="HKLM" Key="Software\Minecraft Server Manager" Name="PanelFirewallRule" Type="integer" Value="1" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="Software\Minecraft Server Manager" Name="PanelFirewallRule" Type="string" Value="1" KeyPath="yes" />
     </Component>
 
     <!--

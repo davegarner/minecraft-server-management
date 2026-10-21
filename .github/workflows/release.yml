@@ -49,12 +49,19 @@ jobs:
         shell: pwsh
         run: ./scripts/build-release.ps1 -Version ${{ steps.version.outputs.version }}
 
+      - name: Build upgrade test package
+        shell: pwsh
+        run: >
+          dotnet build installer/wix/MinecraftServerManager.Installer.wixproj -c Release -p:Version=99.0.0
+          -p:AppPublishDir=$PWD\artifacts\publish -p:GeneratedFilesWxs=$PWD\artifacts\wix\Files.wxs -o artifacts/upgrade-test
+
       - name: Test installers
         shell: pwsh
         run: >
           ./installer/tests/Test-Installers.ps1
           -SetupExe artifacts/release/MinecraftServerManager-${{ steps.version.outputs.version }}-Setup.exe
           -Msi artifacts/release/MinecraftServerManager-${{ steps.version.outputs.version }}-x64.msi
+          -UpgradeMsi artifacts/upgrade-test/MinecraftServerManager-99.0.0-x64.msi
 
       - name: Upload release files
         uses: actions/upload-artifact@v4

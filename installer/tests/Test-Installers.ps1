@@ -10,6 +10,8 @@
 param(
     [Parameter(Mandatory)] [string]$SetupExe,
     [Parameter(Mandatory)] [string]$Msi,
+    # Optional: a higher-versioned build of the same MSI, to test that an upgrade keeps the options.
+    [string]$UpgradeMsi,
     [string]$LogDirectory = "artifacts\test-logs"
 )
 
@@ -23,6 +25,7 @@ New-Item -ItemType Directory -Force $LogDirectory | Out-Null
 $LogDirectory = (Resolve-Path $LogDirectory).Path
 $SetupExe = (Resolve-Path $SetupExe).Path
 $Msi = (Resolve-Path $Msi).Path
+if ($UpgradeMsi) { $UpgradeMsi = (Resolve-Path $UpgradeMsi).Path }
 $script:failures = 0
 
 function Check([bool]$Condition, [string]$Message) {
@@ -119,8 +122,22 @@ Check (Test-Rule "Minecraft Server (TCP 25565)") "firewall rule lets Minecraft p
 Check (Test-Rule "Minecraft Server Manager (TCP 8090)") "firewall rule lets other computers reach the panel"
 Check ((Test-Path $Shortcut) -and ((Get-Content $Shortcut -Raw) -match "localhost:8090")) "Start menu shortcut opens port 8090"
 
+$installedMsi = $Msi
+if ($UpgradeMsi) {
+    Write-Host "MSI: upgrade without options keeps the previous choices" -ForegroundColor Cyan
+    $code = Invoke-Program "msiexec.exe" @("/i", "`"$UpgradeMsi`"", "/qn", "/norestart", "/l*v", "`"$LogDirectory\msi-upgrade.log`"")
+    Check ($code -eq 0) "msiexec upgrade exited with code 0 (got $code)"
+    Check ((Get-ServiceStatus) -eq "Running") "service is running after the upgrade"
+    Check ([bool](Wait-For { Get-Panel 8090 })) "panel still answers on port 8090"
+    Check ((Get-Config).Urls -eq "http://0.0.0.0:8090") "upgrade didn't change the panel address"
+    Check (Test-Rule "Minecraft Server Manager (TCP 8090)") "panel firewall rule kept"
+    Check (Test-Rule "Minecraft Server (TCP 25565)") "Minecraft firewall rule kept"
+    Check ((Test-Path $Shortcut) -and ((Get-Content $Shortcut -Raw) -match "localhost:8090")) "Start menu shortcut still opens port 8090"
+    $installedMsi = $UpgradeMsi
+}
+
 Write-Host "MSI: uninstall" -ForegroundColor Cyan
-$code = Invoke-Program "msiexec.exe" @("/x", "`"$Msi`"", "/qn", "/norestart", "/l*v", "`"$LogDirectory\msi-uninstall.log`"")
+$code = Invoke-Program "msiexec.exe" @("/x", "`"$installedMsi`"", "/qn", "/norestart", "/l*v", "`"$LogDirectory\msi-uninstall.log`"")
 Check ($code -eq 0) "msiexec uninstall exited with code 0 (got $code)"
 Check (-not (Get-Service $ServiceName -ErrorAction SilentlyContinue)) "service removed"
 Check (-not (Test-Path (Join-Path $InstallDir "MinecraftServerManager.exe"))) "program files removed"
