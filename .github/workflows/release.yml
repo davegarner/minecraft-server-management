@@ -52,7 +52,7 @@ jobs:
       - name: Build upgrade test package
         shell: pwsh
         run: >
-          dotnet build installer/wix/MinecraftServerManager.Installer.wixproj -c Release -p:Version=99.0.0
+          dotnet build installer/wix/MinecraftServerManager.Installer.wixproj --no-incremental -c Release -p:Version=99.0.0
           -p:AppPublishDir=$PWD\artifacts\publish -p:GeneratedFilesWxs=$PWD\artifacts\wix\Files.wxs -o artifacts/upgrade-test
 
       - name: Test installers
