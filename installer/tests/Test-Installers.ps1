@@ -128,9 +128,25 @@ function Test-RecoveryActions { [bool]((& sc.exe qfailure $ServiceName) -match "
 # it is still deleting files, so installing again into the same folder straight away loses files to it.
 function Wait-UninstallFinished {
     [bool](Wait-For {
-        -not (Get-Process | Where-Object ProcessName -like "_iu*") -and -not (Test-Path (Join-Path $InstallDir "unins000.dat"))
+        -not (Get-Process | Where-Object ProcessName -like "_iu*") -and -not (Get-ChildItem $InstallDir -Filter "unins*.dat" -ErrorAction SilentlyContinue)
     } 180)
 }
+
+# The setup wizard's uninstaller, as registered under its AppId (it isn't always unins000.exe). If it has gone
+# missing, show what is in the folder and whether Windows Defender removed anything, rather than failing obscurely.
+function Get-WizardUninstaller {
+    $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{40CCD350-F3FF-47AD-A037-69959704C3A1}_is1"
+    $registered = (Get-ItemProperty $key -ErrorAction SilentlyContinue).UninstallString
+    $path = if ($registered) { $registered.Trim('"') } else { Join-Path $InstallDir "unins000.exe" }
+    if (Test-Path $path) { return $path }
+    Write-Host "  uninstaller $path is missing (registered: $([bool]$registered)); the folder contains:" -ForegroundColor Yellow
+    Get-ChildItem $InstallDir -ErrorAction SilentlyContinue | Format-Table Name, Length, LastWriteTime | Out-String | Write-Host
+    Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational" -MaxEvents 50 -ErrorAction SilentlyContinue |
+        Where-Object Id -in 1116, 1117, 1118, 1119 |
+        ForEach-Object { Write-Host "  [Defender $($_.TimeCreated.ToString('HH:mm:ss'))] $((($_.Message -split "`n") | Select-Object -First 8) -join ' | ')" }
+    return $null
+}
+
 function Get-ServiceAccount { (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").StartName }
 
 # Only SYSTEM, Administrators and the service's account have access, and nothing is inherited from the parent.
@@ -180,8 +196,9 @@ if ($PreviousSetupExe) {
     Check (Test-Private "C:\MinecraftServerPrevious") "existing server folder no longer writable by other users"
 
     # Back to a clean machine for the checks below.
-    $null = Invoke-Program (Join-Path $InstallDir "unins000.exe") @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
-    Check (Wait-UninstallFinished) "previous release fully uninstalled"
+    $uninstaller = Get-WizardUninstaller
+    if ($uninstaller) { $null = Invoke-Program $uninstaller @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") }
+    Check ($uninstaller -and (Wait-UninstallFinished)) "previous release fully uninstalled"
     Remove-Item $ConfigDir, "C:\MinecraftServerPrevious" -Recurse -Force -ErrorAction SilentlyContinue
 }
 
@@ -237,7 +254,8 @@ Check ([bool](Wait-For { Get-Panel 8080 })) "panel back on port 8080"
 
 # ------------------------------------------------------------------------------------------------
 Write-Host "Setup wizard: uninstall" -ForegroundColor Cyan
-$code = Invoke-Program (Join-Path $InstallDir "unins000.exe") @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=`"$LogDirectory\setup-uninstall.log`"")
+$uninstaller = Get-WizardUninstaller
+$code = if ($uninstaller) { Invoke-Program $uninstaller @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=`"$LogDirectory\setup-uninstall.log`"") } else { -1 }
 Check ($code -eq 0) "uninstaller exited with code 0 (got $code)"
 Check (Wait-UninstallFinished) "uninstaller finished (nothing left running before the MSI installs into the same folder)"
 Check ([bool](Wait-For { -not (Get-Service $ServiceName -ErrorAction SilentlyContinue) })) "service removed"
