@@ -29,7 +29,14 @@ public class ServerComponentTests
         Assert.Empty(Assert.IsType<PlayerLogEvent.Online>(
             ServerLogParser.ParsePlayerEvent(Prefix + "There are 0 of a max of 20 players online:")).Names);
 
+        // Minecraft 26.x logs system messages with a "System chat: " prefix.
+        Assert.Equal(new PlayerLogEvent.Joined("Steve"), ServerLogParser.ParsePlayerEvent(Prefix + "System chat: Steve joined the game"));
+        Assert.Equal(new PlayerLogEvent.Left("Steve"), ServerLogParser.ParsePlayerEvent(Prefix + "System chat: Steve left the game"));
+        Assert.Equal(["Steve", "Alex"], Assert.IsType<PlayerLogEvent.Online>(
+            ServerLogParser.ParsePlayerEvent(Prefix + "System chat: There are 2 of a max of 5 players online: Steve, Alex")).Names);
+
         Assert.Null(ServerLogParser.ParsePlayerEvent(Prefix + "<Steve> I joined the game"));
+        Assert.Null(ServerLogParser.ParsePlayerEvent(Prefix + "<Steve> System chat: Alex joined the game"));
         Assert.Null(ServerLogParser.ParsePlayerEvent(Prefix + "Steve joined the game and left"));
     }
 

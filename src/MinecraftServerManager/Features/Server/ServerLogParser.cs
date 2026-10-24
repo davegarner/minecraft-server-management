@@ -42,12 +42,15 @@ public static partial class ServerLogParser
     [GeneratedRegex(@"\]: Done \([0-9.,]+s\)!")]
     private static partial Regex DoneRegex();
 
-    [GeneratedRegex(@"\]: (?<name>[A-Za-z0-9_]{1,16})(?: \(formerly known as [A-Za-z0-9_]{1,16}\))? joined the game$")]
+    // Minecraft 26.x prefixes system messages with "System chat: "; older versions don't.
+    private const string SystemMessage = @"\]: (?:System chat: )?";
+
+    [GeneratedRegex(SystemMessage + @"(?<name>[A-Za-z0-9_]{1,16})(?: \(formerly known as [A-Za-z0-9_]{1,16}\))? joined the game$")]
     private static partial Regex JoinRegex();
 
-    [GeneratedRegex(@"\]: (?<name>[A-Za-z0-9_]{1,16}) left the game$")]
+    [GeneratedRegex(SystemMessage + @"(?<name>[A-Za-z0-9_]{1,16}) left the game$")]
     private static partial Regex LeaveRegex();
 
-    [GeneratedRegex(@"\]: There are \d+ of a max of \d+ players online:(?<names>.*)$")]
+    [GeneratedRegex(SystemMessage + @"There are \d+ of a max of \d+ players online:(?<names>.*)$")]
     private static partial Regex ListRegex();
 }
