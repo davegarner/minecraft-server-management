@@ -42,7 +42,7 @@ public static partial class ServerLogParser
     [GeneratedRegex(@"\]: Done \([0-9.,]+s\)!")]
     private static partial Regex DoneRegex();
 
-    // Minecraft 26.x prefixes system messages with "System chat: "; older versions don't.
+    // Newer servers (such as 26.3) prefix system messages with "System chat: "; older ones don't.
     private const string SystemMessage = @"\]: (?:System chat: )?";
 
     [GeneratedRegex(SystemMessage + @"(?<name>[A-Za-z0-9_]{1,16})(?: \(formerly known as [A-Za-z0-9_]{1,16}\))? joined the game$")]

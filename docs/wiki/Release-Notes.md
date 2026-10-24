@@ -1,5 +1,11 @@
 # Release Notes
 
+## 1.0.5 (24 October 2026)
+
+A bug fix for newer Minecraft servers. Run the new setup over the previous version; your settings, worlds and backups are kept.
+
+- **Online players:** the Dashboard's player count and list update again when players join and leave. Newer Minecraft servers (such as 26.3) log these events as "System chat: Steve joined the game", which the panel didn't recognise, so it always showed 0 players online. Older Minecraft versions still work as before.
+
 ## 1.0.4 (21 October 2026)
 
 A security update; upgrading is recommended. (Version 1.0.3 was tagged but never released; 1.0.4 contains its changes.) Run the new setup over the previous version; your settings, worlds and backups are kept.
