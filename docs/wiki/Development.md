@@ -114,7 +114,7 @@ To publish a release:
 - **Long operations** (backup, restore, install) run in the service and publish immutable progress records, so they continue if the user navigates away.
 - **Destructive actions** use `ConfirmDialog` (optionally with a checkbox or type-to-confirm). Feedback uses `ToastService`.
 - **File writes** that must not be half-written use `FileUtil.WriteAllTextAtomic`.
-- **CSS** uses the tokens defined at the top of `wwwroot/app.css`; dark is the default, with light under `prefers-color-scheme: light`.
+- **CSS** uses the tokens defined at the top of `wwwroot/app.css`. Each colour is `light-dark(<light>, <dark>)`: the panel follows the device's setting (dark if it has none) unless the theme button has stored a choice in the `mcm.theme` cookie, which `App.razor` renders as `data-theme` on `<html>`.
 - Page components are named `*Page.razor` where the plain name would clash with an injected service property.
 
 ### Adding a server property to the editor

@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="@Theme">
 
 <head>
     <meta charset="utf-8" />
@@ -30,4 +30,7 @@
     // Sign-in pages opt out of interactivity so they can set the authentication cookie.
     private IComponentRenderMode? PageRenderMode =>
         HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+
+    // Light or dark as chosen with the theme button (see mcm.toggleTheme); null follows the device.
+    private string? Theme => HttpContext.Request.Cookies["mcm.theme"] is ("light" or "dark") and var theme ? theme : null;
 }

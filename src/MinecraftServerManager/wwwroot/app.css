@@ -1,62 +1,41 @@
 /* Minecraft Server Manager: theme tokens */
+/*
+  Colours are light-dark(<light>, <dark>). The panel follows the device's setting (dark if it has none) unless
+  the theme button has chosen one, which the server renders as data-theme on <html>.
+*/
 :root {
-    color-scheme: dark;
-    --bg: #0e1113;
-    --surface: #161a1d;
-    --surface-2: #1c2125;
-    --surface-3: #242a2f;
-    --border: #2a3238;
-    --border-strong: #3a444c;
-    --text: #e6eaed;
-    --text-muted: #96a1aa;
-    --text-faint: #6a757e;
-    --accent: #62b562;
-    --accent-hover: #74c874;
-    --accent-text: #0b1a0b;
-    --accent-soft: rgba(98, 181, 98, 0.14);
-    --danger: #e5534b;
-    --danger-hover: #f06b63;
-    --danger-soft: rgba(229, 83, 75, 0.14);
-    --warning: #d9a33a;
-    --warning-soft: rgba(217, 163, 58, 0.14);
-    --info: #58a6e8;
-    --info-soft: rgba(88, 166, 232, 0.14);
+    color-scheme: dark light;
+    --bg: light-dark(#f3f5f7, #0e1113);
+    --surface: light-dark(#ffffff, #161a1d);
+    --surface-2: light-dark(#f7f9fa, #1c2125);
+    --surface-3: light-dark(#eceff2, #242a2f);
+    --border: light-dark(#dde2e7, #2a3238);
+    --border-strong: light-dark(#c6ced5, #3a444c);
+    --text: light-dark(#1a2127, #e6eaed);
+    --text-muted: light-dark(#5a6670, #96a1aa);
+    --text-faint: light-dark(#8a959e, #6a757e);
+    --accent: light-dark(#3c8d3f, #62b562);
+    --accent-hover: light-dark(#337a36, #74c874);
+    --accent-text: light-dark(#ffffff, #0b1a0b);
+    --accent-soft: light-dark(rgba(60, 141, 63, 0.12), rgba(98, 181, 98, 0.14));
+    --danger: light-dark(#cf3b33, #e5534b);
+    --danger-hover: light-dark(#b8322b, #f06b63);
+    --danger-soft: light-dark(rgba(207, 59, 51, 0.1), rgba(229, 83, 75, 0.14));
+    --warning: light-dark(#b7791f, #d9a33a);
+    --warning-soft: light-dark(rgba(183, 121, 31, 0.12), rgba(217, 163, 58, 0.14));
+    --info: light-dark(#2f7cc2, #58a6e8);
+    --info-soft: light-dark(rgba(47, 124, 194, 0.1), rgba(88, 166, 232, 0.14));
     --console-bg: #0a0c0d;
     --console-text: #d3d9de;
     --radius: 10px;
     --radius-sm: 6px;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.25);
+    --shadow: 0 1px 2px light-dark(rgba(16, 24, 32, 0.06), rgba(0, 0, 0, 0.35)), 0 8px 24px light-dark(rgba(16, 24, 32, 0.06), rgba(0, 0, 0, 0.25));
     --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
     --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, "SF Mono", Menlo, monospace;
     --sidebar-width: 236px;
 }
-
-@media (prefers-color-scheme: light) {
-    :root {
-        color-scheme: light;
-        --bg: #f3f5f7;
-        --surface: #ffffff;
-        --surface-2: #f7f9fa;
-        --surface-3: #eceff2;
-        --border: #dde2e7;
-        --border-strong: #c6ced5;
-        --text: #1a2127;
-        --text-muted: #5a6670;
-        --text-faint: #8a959e;
-        --accent: #3c8d3f;
-        --accent-hover: #337a36;
-        --accent-text: #ffffff;
-        --accent-soft: rgba(60, 141, 63, 0.12);
-        --danger: #cf3b33;
-        --danger-hover: #b8322b;
-        --danger-soft: rgba(207, 59, 51, 0.1);
-        --warning: #b7791f;
-        --warning-soft: rgba(183, 121, 31, 0.12);
-        --info: #2f7cc2;
-        --info-soft: rgba(47, 124, 194, 0.1);
-        --shadow: 0 1px 2px rgba(16, 24, 32, 0.06), 0 8px 24px rgba(16, 24, 32, 0.06);
-    }
-}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 /* Base */
 *, *::before, *::after { box-sizing: border-box; }

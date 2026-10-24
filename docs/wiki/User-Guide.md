@@ -50,7 +50,7 @@ The panel works on small screens. Tap the **☰** button at the top left to open
 
 ### Light and dark appearance
 
-The panel follows your device's light/dark setting automatically.
+The panel follows your device's light/dark setting automatically. To choose one yourself, click the **◐** button at the top right, next to **Sign out**. The browser remembers your choice; switch back to your device's setting and the panel follows the device again.
 
 ![Light appearance](images/light-theme.png)
 

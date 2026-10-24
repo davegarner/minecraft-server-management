@@ -34,6 +34,21 @@ window.mcm = {
         });
     },
 
+    // Switches between light and dark. The choice is kept in a cookie so the server renders the page in it
+    // straight away; switching back to the device's own theme removes the cookie, so the panel follows the device again.
+    toggleTheme() {
+        const root = document.documentElement;
+        const deviceTheme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        const next = (root.dataset.theme || deviceTheme) === "dark" ? "light" : "dark";
+        if (next === deviceTheme) {
+            delete root.dataset.theme;
+            document.cookie = "mcm.theme=; path=/; max-age=0; samesite=strict";
+        } else {
+            root.dataset.theme = next;
+            document.cookie = `mcm.theme=${next}; path=/; max-age=31536000; samesite=strict`;
+        }
+    },
+
     // navigator.clipboard requires HTTPS or localhost; fall back to execCommand for plain-HTTP LAN access.
     async copyText(text) {
         try {

@@ -1,4 +1,5 @@
 ﻿@inherits LayoutComponentBase
+@inject IJSRuntime JS
 
 <div class="app @(_navOpen ? "nav-open" : "")">
     <aside class="sidebar">
@@ -35,6 +36,10 @@
             <AuthorizeView>
                 <span class="muted small topbar-user">@context.User.Identity?.Name</span>
             </AuthorizeView>
+            <button class="icon-btn" aria-label="Switch between light and dark theme" title="Switch between light and dark theme"
+                    @onclick="ToggleThemeAsync">
+                <Icon Name="theme" Size="18" />
+            </button>
             <form method="post" action="logout" class="inline-form">
                 <AntiforgeryToken />
                 <button type="submit" class="btn btn-ghost btn-sm"><Icon Name="logout" Size="16" /> Sign out</button>
@@ -56,4 +61,6 @@
 
 @code {
     private bool _navOpen;
+
+    private async Task ToggleThemeAsync() => await JS.InvokeVoidAsync("mcm.toggleTheme");
 }
