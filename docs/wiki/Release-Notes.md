@@ -1,5 +1,11 @@
 # Release Notes
 
+## 1.0.6 (24 October 2026)
+
+A small feature update. Run the new setup over the previous version; your settings, worlds and backups are kept.
+
+- **Light and dark theme button:** the **◐** button at the top right, next to **Sign out**, switches the panel between light and dark whatever your device is set to. Your browser remembers the choice; switch back to your device's setting and the panel follows the device again.
+
 ## 1.0.5 (24 October 2026)
 
 A bug fix for newer Minecraft servers. Run the new setup over the previous version; your settings, worlds and backups are kept.

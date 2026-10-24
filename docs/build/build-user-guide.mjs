@@ -13,7 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const wiki = path.resolve(here, '../wiki');
 const output = path.resolve(here, '../Minecraft-Server-Manager-User-Guide.docx');
 
-const VERSION = '1.0.5';
+const VERSION = '1.0.6';
 const DATE = 'October 2026';
 
 // Chapters in reading order. `title` overrides the page's own H1.

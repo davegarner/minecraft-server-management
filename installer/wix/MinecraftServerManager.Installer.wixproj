@@ -6,7 +6,7 @@
       msiexec /i MinecraftServerManager-<version>-x64.msi /qn [PANELPORT=8080] [REMOTEACCESS=1] [OPENMINECRAFTPORT=0]
   -->
   <PropertyGroup>
-    <Version Condition="'$(Version)' == ''">1.0.5</Version>
+    <Version Condition="'$(Version)' == ''">1.0.6</Version>
     <OutputName>MinecraftServerManager-$(Version)-x64</OutputName>
     <InstallerPlatform>x64</InstallerPlatform>
     <DefineConstants>Version=$(Version);PublishDir=$(AppPublishDir);IconFile=$(MSBuildThisFileDirectory)..\..\src\MinecraftServerManager\app.ico</DefineConstants>

@@ -1,1 +1,1 @@
-Minecraft Server Manager 1.0.5 · [Source code](https://gitea.uk.local:3001/Apps/minecraft-server-management) · *Minecraft is a trademark of Mojang AB. This project is not affiliated with Mojang or Microsoft.*
+Minecraft Server Manager 1.0.6 · [Source code](https://gitea.uk.local:3001/Apps/minecraft-server-management) · *Minecraft is a trademark of Mojang AB. This project is not affiliated with Mojang or Microsoft.*
